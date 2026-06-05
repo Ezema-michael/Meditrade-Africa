@@ -1,0 +1,6 @@
+{
+  "name": "MediTrade Africa",
+  "description": "Transform chaos into structure. A verified healthcare database & marketplace where hospital buyers locate pre-owned, refurbished & new medical instruments with Google AI list generation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
