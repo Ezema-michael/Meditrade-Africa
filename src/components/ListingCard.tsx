@@ -13,9 +13,10 @@ interface ListingCardProps {
   onContactClick: (id: string, whatsappNumber: string) => any;
   onReportClick: (id: string) => void;
   onRefresh?: () => void;
+  onInquireChat?: (listingId: string) => void;
 }
 
-export default function ListingCard({ listing, onContactClick, onReportClick, onRefresh }: ListingCardProps) {
+export default function ListingCard({ listing, onContactClick, onReportClick, onRefresh, onInquireChat }: ListingCardProps) {
   const [isFavorite, setIsFavorite] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
 
@@ -157,32 +158,47 @@ export default function ListingCard({ listing, onContactClick, onReportClick, on
             </div>
           </div>
 
-          {/* Instant Call CTA buttons */}
-          <div className="flex gap-2">
-            <button
-              onClick={() => onContactClick(listing.id, listing.seller_whatsapp || '+2348000000000')}
-              className="flex-1 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl py-2.5 px-3 flex items-center justify-center gap-2 text-xs font-semibold shadow-xs hover:shadow-xs transition-all cursor-pointer"
-            >
-              <Phone className="h-3.5 w-3.5 fill-white" />
-              <span>Contact Seller</span>
-            </button>
+          {/* Instant Contact & Secure Chat actions */}
+          <div className="flex flex-col gap-2">
+            <div className="flex gap-2">
+              <button
+                onClick={() => onContactClick(listing.id, listing.seller_whatsapp || '+2348000000000')}
+                className="flex-1 bg-emerald-650 hover:bg-emerald-700 text-white rounded-xl py-2 px-2.5 flex items-center justify-center gap-1.5 text-xs font-bold shadow-xs transition-all cursor-pointer"
+                title="Open WhatsApp chat with vendor"
+              >
+                <Phone className="h-3.5 w-3.5 fill-white" />
+                <span>WhatsApp</span>
+              </button>
+              
+              <button
+                onClick={() => onInquireChat?.(listing.id)}
+                className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl py-2 px-2.5 flex items-center justify-center gap-1.5 text-xs font-bold shadow-xs transition-all cursor-pointer"
+                title="Send inquiry on MediTrade Platform Chat"
+              >
+                <MessageSquare className="h-3.5 w-3.5" />
+                <span>Secure Chat</span>
+              </button>
+            </div>
 
-            {/* Share and Flag tools */}
-            <button
-              onClick={handleShare}
-              className={`px-3 py-2.5 rounded-xl border border-slate-200 text-slate-600 hover:text-slate-800 hover:bg-slate-50 transition-colors cursor-pointer ${isCopied ? 'bg-emerald-50 border-emerald-100 text-emerald-600' : ''}`}
-              title="Share Listing link"
-            >
-              {isCopied ? <CheckCircle className="h-4 w-4" /> : <Share2 className="h-4 w-4" />}
-            </button>
-            
-            <button
-              onClick={() => onReportClick(listing.id)}
-              className="px-3 py-2.5 rounded-xl border border-slate-200 text-slate-400 hover:text-rose-600 hover:bg-rose-50 hover:border-rose-100 transition-colors cursor-pointer"
-              title="Report listing as suspicious"
-            >
-              <AlertTriangle className="h-4 w-4" />
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={handleShare}
+                className={`flex-1 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:text-slate-800 hover:bg-slate-50 transition-colors text-[10px] font-bold flex items-center justify-center gap-1 cursor-pointer ${isCopied ? 'bg-emerald-50 border-emerald-100 text-emerald-600' : ''}`}
+                title="Share Listing link"
+              >
+                {isCopied ? <CheckCircle className="h-3.5 w-3.5" /> : <Share2 className="h-3.5 w-3.5" />}
+                <span>Share Link</span>
+              </button>
+              
+              <button
+                onClick={() => onReportClick(listing.id)}
+                className="py-1.5 px-3 rounded-lg border border-slate-200 text-slate-400 hover:text-rose-600 hover:bg-rose-50 hover:border-rose-100 transition-colors cursor-pointer flex items-center justify-center gap-1"
+                title="Report listing as suspicious"
+              >
+                <AlertTriangle className="h-3.5 w-3.5" />
+                <span className="text-[10px] font-bold">Flag</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>

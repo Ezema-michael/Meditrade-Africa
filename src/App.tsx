@@ -41,14 +41,87 @@ import AIDashboard from './components/AIDashboard';
 import ProcurementHub from './components/ProcurementHub';
 import AdminPanel from './components/AdminPanel';
 import WorkspaceCloudGuide from './components/WorkspaceCloudGuide';
+import LeadsDashboard from './components/LeadsDashboard';
+import UserProfileMenu from './components/UserProfileMenu';
+import RegistrationModal from './components/RegistrationModal';
+
+interface TabGuestRestrictionNoticeProps {
+  tabName: string;
+  onTriggerRegister: () => void;
+  onFastLogin: (user: any) => void;
+}
+
+function TabGuestRestrictionNotice({ tabName, onTriggerRegister, onFastLogin }: TabGuestRestrictionNoticeProps) {
+  return (
+    <div className="relative overflow-hidden bg-slate-50 border border-slate-200 rounded-3xl p-8 md:p-12 text-center space-y-6 shadow-xs max-w-3xl mx-auto my-12 animate-fade-in">
+      <div className="absolute inset-0 bg-radial-gradient from-indigo-50/20 to-transparent pointer-events-none" />
+      <div className="mx-auto h-16 w-16 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 shadow-xs">
+        <ShieldCheck className="h-8 w-8 text-indigo-650" />
+      </div>
+      
+      <div className="max-w-2xl mx-auto space-y-3">
+        <span className="bg-rose-100 text-rose-800 border border-rose-200 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider inline-flex items-center gap-1">
+          🔒 Restricted Capability
+        </span>
+        <h3 className="font-black text-slate-900 text-xl md:text-2xl tracking-tight leading-tight">
+          {tabName} Locked
+        </h3>
+        <p className="text-slate-500 text-xs md:text-sm leading-relaxed max-w-xl mx-auto">
+          The capability <strong>{tabName}</strong> is restricted to registered clinicians, buyers, and verified vendors. Switch your operator profile or register a free profile to immediately unlock full capabilities.
+        </p>
+      </div>
+
+      {/* Interactive triggers */}
+      <div className="flex flex-col sm:flex-row justify-center items-center gap-3.5 pt-4">
+        <button 
+          onClick={onTriggerRegister}
+          className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs px-6 py-3 rounded-xl transition-all cursor-pointer shadow-md shadow-indigo-600/10 flex items-center justify-center gap-1.5"
+        >
+          <Sparkles className="h-4 w-4 animate-pulse" />
+          <span>Register New Account Node</span>
+        </button>
+        <div className="text-xs text-slate-400 font-bold shrink-0">or Quick Login:</div>
+        <div className="flex gap-2">
+          <button 
+            type="button"
+            onClick={() => onFastLogin({
+              id: 'usr-5',
+              email: 'buyer@riversidememorial.org',
+              role: 'buyer',
+              businessName: 'Riverside Memorial Hospital',
+              phone: '+2348055554444'
+            })}
+            className="bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 px-3.5 py-2.5 rounded-xl text-xs font-bold cursor-pointer transition-all flex items-center gap-1"
+          >
+            🏥 Purchaser Fatima
+          </button>
+          <button 
+            type="button"
+            onClick={() => onFastLogin({
+              id: 'usr-1',
+              email: 'chidi.obi@medlink.com.ng',
+              role: 'seller',
+              businessName: 'MedLink Diagnostics Ltd',
+              phone: '+2348031234567'
+            })}
+            className="bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-800 px-3.5 py-2.5 rounded-xl text-xs font-bold cursor-pointer transition-all flex items-center gap-1"
+          >
+            🚚 Dealer Chidi Obi
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function App() {
   // Current active viewport tab
-  const [activeTab, setActiveTab] = useState<'marketplace' | 'ai_magic' | 'procure' | 'admin' | 'devops' | 'pricing'>('marketplace');
+  const [activeTab, setActiveTab] = useState<'marketplace' | 'ai_magic' | 'procure' | 'leads' | 'admin' | 'devops' | 'pricing'>('marketplace');
 
   // Directory listing states
   const [listings, setListings] = useState<Listing[]>([]);
   const [loadingListings, setLoadingListings] = useState(false);
+  const featuredListings = listings.filter(item => item.featured);
 
   // Search/Filters states
   const [searchQuery, setSearchQuery] = useState('');
@@ -68,6 +141,49 @@ export default function App() {
     role: 'admin', // Mapped as clinical admin
     businessName: 'MediTrade General Ops'
   });
+
+  // Dynamic user session list and registration modal triggers
+  const [availableUsers, setAvailableUsers] = useState<any[]>([]);
+  const [showRegistrationModal, setShowRegistrationModal] = useState(false);
+
+  // Sync users list from server
+  const fetchAvailableUsers = async () => {
+    try {
+      const res = await fetch('/api/diagnostics/schema');
+      if (res.ok) {
+        const data = await res.json();
+        const users = data.tables.users || [];
+        const sellers = data.tables.sellers || [];
+        
+        const mappedUsers = users.map((u: any) => {
+          let name = u.email;
+          if (u.role === 'admin') {
+            name = 'Clinical Moderator (Michael)';
+          } else if (u.role === 'buyer') {
+            name = u.email === 'buyer@riversidememorial.org' 
+              ? 'Hospital Purchaser (Fatima)' 
+              : `${u.email.split('@')[0].toUpperCase()} (Hospital Purchaser)`;
+          } else if (u.role === 'seller') {
+            const seller = sellers.find((s: any) => s.user_id === u.id);
+            name = seller ? `${seller.business_name} (Vendor)` : `${u.email.split('@')[0].toUpperCase()} (Vendor)`;
+          }
+          return {
+            ...u,
+            displayName: name,
+            businessName: u.role === 'admin' 
+              ? 'MediTrade General Ops' 
+              : u.role === 'buyer' 
+                ? (u.email === 'buyer@riversidememorial.org' ? 'Riverside Memorial Hospital' : `${u.email.split('@')[0].toUpperCase()} Hospital`)
+                : (sellers.find((s: any) => s.user_id === u.id)?.business_name || 'Medical Equipment Ltd')
+          };
+        });
+        
+        setAvailableUsers(mappedUsers);
+      }
+    } catch (err) {
+      console.error('Failed to fetch available users list:', err);
+    }
+  };
 
   // Seller profile state if roles change
   const [sellerProfile, setSellerProfile] = useState<Seller | null>(INITIAL_SELLERS[0]);
@@ -210,10 +326,37 @@ export default function App() {
     }
   };
 
+  // Start Secure direct Chat / Inquiry Lead
+  const handleInquireChat = async (listingId: string) => {
+    try {
+      const res = await fetch('/api/leads/inquire', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          listing_id: listingId,
+          buyer_id: currentUser?.id,
+          message: `Hello! We are inquiring regarding your listed medical equipment. Is this unit still available and does it carry diagnostic warranty?`
+        })
+      });
+      if (res.ok) {
+        // Switch to the leads CRM page where they can chat in real-time!
+        setActiveTab('leads');
+      } else {
+        alert('Failed to initialize platform chat. Verify you are logged in as a valid Operator.');
+      }
+    } catch (err) {
+      console.error('Failed to initiate direct inquiry:', err);
+    }
+  };
+
   // Listen to search/tab adjustments
   useEffect(() => {
     fetchListings();
   }, [selectedCategory, selectedState, selectedCondition, activeTab]);
+
+  useEffect(() => {
+    fetchAvailableUsers();
+  }, [currentUser?.id]);
 
   useEffect(() => {
     fetchNotifications(currentUser?.id);
@@ -242,34 +385,33 @@ export default function App() {
               value={currentUser.id}
               onChange={(e) => {
                 const targetId = e.target.value;
-                if (targetId === 'usr-3') {
+                if (targetId === 'REGISTER_NEW') {
+                  setShowRegistrationModal(true);
+                  return;
+                }
+                const found = availableUsers.find(u => u.id === targetId);
+                if (found) {
                   setCurrentUser({
-                    id: 'usr-3',
-                    email: 'ezemamichael@gmail.com',
-                    role: 'admin',
-                    businessName: 'MediTrade General Ops'
-                  });
-                } else if (targetId === 'usr-5') {
-                  setCurrentUser({
-                    id: 'usr-5',
-                    email: 'buyer@riversidememorial.org',
-                    role: 'buyer',
-                    businessName: 'Riverside Memorial Hospital'
-                  });
-                } else if (targetId === 'usr-1') {
-                  setCurrentUser({
-                    id: 'usr-1',
-                    email: 'chidi.obi@medlink.com.ng',
-                    role: 'seller',
-                    businessName: 'MedLink Diagnostics Ltd'
+                    id: found.id,
+                    email: found.email,
+                    role: found.role,
+                    businessName: found.businessName || found.email,
+                    phone: found.phone
                   });
                 }
               }}
-              className="bg-indigo-800 text-white font-extrabold text-[10.5px] rounded border border-indigo-500/30 px-1 py-0.5 focus:ring-0 focus:outline-none cursor-pointer"
+              className="bg-indigo-800 text-white font-extrabold text-[10.5px] rounded border border-indigo-500/30 px-1 py-0.5 focus:ring-0 focus:outline-none cursor-pointer animate-pulse-slow"
             >
-              <option value="usr-3">🛡️ Moderator (Michael)</option>
-              <option value="usr-5">🏥 Hospital Purchaser (Fatima)</option>
-              <option value="usr-1">🚚 Equipment Dealer (Chidi Obi)</option>
+              {(availableUsers.length > 0 ? availableUsers : [
+                { id: 'usr-3', role: 'admin', displayName: 'Clinical Moderator (Michael)' },
+                { id: 'usr-5', role: 'buyer', displayName: 'Hospital Purchaser (Fatima)' },
+                { id: 'usr-1', role: 'seller', displayName: 'Equipment Dealer (Chidi Obi)' }
+              ]).map(u => (
+                <option key={u.id} value={u.id}>
+                  {u.role === 'admin' ? '🛡️' : u.role === 'buyer' ? '🏥' : '🚚'} {u.displayName}
+                </option>
+              ))}
+              <option value="REGISTER_NEW" className="font-extrabold text-indigo-300">✨ Register New Operator Node...</option>
             </select>
           </div>
         </div>
@@ -373,6 +515,15 @@ export default function App() {
               <span>Hospital Procurement RFQs</span>
             </button>
             <button
+              onClick={() => setActiveTab('leads')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                activeTab === 'leads' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+              }`}
+            >
+              <MessageSquare className="h-4 w-4 text-indigo-650" />
+              <span>Leads & Direct Chat</span>
+            </button>
+            <button
               onClick={() => setActiveTab('pricing')}
               className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                 activeTab === 'pricing' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
@@ -400,7 +551,7 @@ export default function App() {
             </button>
           </nav>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <button 
               onClick={() => setActiveTab('ai_magic')}
               className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold shadow-xs hover:shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
@@ -408,6 +559,13 @@ export default function App() {
               <PlusCircle className="h-4 w-4" />
               <span>Bulk WhatsApp Auto-Import</span>
             </button>
+            
+            <UserProfileMenu 
+              currentUser={currentUser} 
+              onUserChange={setCurrentUser} 
+              availableUsers={availableUsers}
+              onTriggerRegister={() => setShowRegistrationModal(true)}
+            />
           </div>
         </div>
 
@@ -416,6 +574,7 @@ export default function App() {
           <button onClick={() => setActiveTab('marketplace')} className={`px-4 py-3.5 text-xs font-bold whitespace-nowrap cursor-pointer ${activeTab === 'marketplace' ? 'border-b-2 border-indigo-600 text-indigo-600' : ''}`}>Directory</button>
           <button onClick={() => setActiveTab('ai_magic')} className={`px-4 py-3.5 text-xs font-bold whitespace-nowrap cursor-pointer ${activeTab === 'ai_magic' ? 'border-b-2 border-indigo-600 text-indigo-600' : ''}`}>WhatsApp Import</button>
           <button onClick={() => setActiveTab('procure')} className={`px-4 py-3.5 text-xs font-bold whitespace-nowrap cursor-pointer ${activeTab === 'procure' ? 'border-b-2 border-indigo-600 text-indigo-600' : ''}`}>Hospital RFQs</button>
+          <button onClick={() => setActiveTab('leads')} className={`px-4 py-3.5 text-xs font-bold whitespace-nowrap cursor-pointer ${activeTab === 'leads' ? 'border-b-2 border-indigo-600 text-indigo-600' : ''}`}>Leads & Chat</button>
           <button onClick={() => setActiveTab('admin')} className={`px-4 py-3.5 text-xs font-bold whitespace-nowrap cursor-pointer ${activeTab === 'admin' ? 'border-b-2 border-indigo-600 text-indigo-600' : ''}`}>Moderation Console</button>
           <button onClick={() => setActiveTab('devops')} className={`px-4 py-3.5 text-xs font-bold whitespace-nowrap cursor-pointer ${activeTab === 'devops' ? 'border-b-2 border-indigo-600 text-indigo-600' : ''}`}>GCP IAC Blueprints</button>
         </div>
@@ -460,176 +619,304 @@ export default function App() {
             </div>
 
             {/* SELLER IDENTITY INTERACTIVE MINI DASHBOARD FOR SCREEN VISITOR */}
-            <div className="bg-white border border-slate-150 rounded-2.5xl p-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shadow-sm">
-              <div className="space-y-1">
-                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Configure Seller KYC Status</span>
-                <h4 className="font-bold text-slate-800 text-sm flex items-center gap-1.5">
-                  Your Current Merchant Store: <span className="text-indigo-600 underline">{sellerProfile ? sellerProfile.business_name : 'No Store Connected'}</span>
-                  {sellerProfile?.verification_status === 'verified' ? (
-                    <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] rounded-lg font-bold flex items-center gap-0.5">
-                      <ShieldCheck className="h-3.5 w-3.5" /> Verified CAC Badge
-                    </span>
-                  ) : (
-                    <span className="px-2 py-0.5 bg-amber-100 text-amber-800 text-[10px] rounded-lg font-bold">
-                      Pending CAC Verification
-                    </span>
-                  )}
-                </h4>
-                <p className="text-slate-500 text-xs">
-                  Merchants with an official Corporate Affairs Commission registration badge experience a <strong>3x click rate limit improvement</strong>.
-                </p>
-              </div>
-
-              {sellerProfile?.verification_status === 'unverified' && (
-                <form onSubmit={handleCacSubmit} className="flex gap-2 items-center flex-wrap w-full md:w-auto">
-                  <input
-                    type="text"
-                    required
-                    maxLength={15}
-                    placeholder="Enter CAC Business ID (e.g. RC-1492)"
-                    value={cacRegNumber}
-                    onChange={(e) => setCacRegNumber(e.target.value)}
-                    className="bg-slate-50 border border-slate-250 rounded-lg p-2.5 text-xs w-full sm:w-60 focus:outline-indigo-600/40"
-                  />
-                  <button
-                    type="submit"
-                    disabled={isCacSubmitting}
-                    className="bg-indigo-600 text-white hover:bg-indigo-700 text-xs font-bold px-4 py-2.5 rounded-lg w-full sm:w-auto cursor-pointer"
-                  >
-                    {isCacSubmitting ? 'Uploading...' : 'Verify Store CAC'}
-                  </button>
-                </form>
-              )}
-            </div>
-
-            {/* HIGH-OCTANE CATEGORY NAVIGATION JUMBO CHIPS */}
-            <div>
-              <span className="text-[11px] font-black uppercase text-slate-400 block tracking-widest mb-3">
-                Jump to Professional Category
-              </span>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  onClick={() => setSelectedCategory('')}
-                  className={`px-3 py-2 rounded-xl text-xs font-bold border transition-colors cursor-pointer ${
-                    selectedCategory === '' 
-                      ? 'bg-indigo-600 text-white border-indigo-600' 
-                      : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-600/40'
-                  }`}
-                >
-                  All Categories ({listings.length})
-                </button>
-                {CATEGORIES.filter(c => !c.parent_id).map(c => (
-                  <button
-                    key={c.id}
-                    onClick={() => setSelectedCategory(c.id)}
-                    className={`px-3.5 py-2.5 rounded-xl text-xs font-bold border transition-colors cursor-pointer whitespace-nowrap ${
-                      selectedCategory === c.id 
-                        ? 'bg-indigo-600 text-white border-indigo-600' 
-                        : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-600/40'
-                    }`}
-                  >
-                    {c.name}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* ADVANCED MULTI-OPTIONS SEARCH BAR & FILTERS */}
-            <div className="bg-white border border-slate-150 p-5 rounded-3xl shadow-xs space-y-4">
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-3">
-                <div className="lg:col-span-5 relative">
-                  <Search className="absolute left-3.5 top-3.5 text-slate-400 h-4.5 w-4.5" />
-                  <input
-                    type="text"
-                    placeholder="Search by diagnostic brand, specific models (Mindray, Voluson, Ultrasound, Autoclaves, Gloves...)"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 pl-11 pr-4 text-xs focus:ring-1 focus:ring-indigo-600 focus:outline-none"
-                  />
+            {currentUser?.role !== 'guest' && (
+              <div className="bg-white border border-slate-150 rounded-2.5xl p-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shadow-sm">
+                <div className="space-y-1">
+                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Configure Seller KYC Status</span>
+                  <h4 className="font-bold text-slate-800 text-sm flex items-center gap-1.5">
+                    Your Current Merchant Store: <span className="text-indigo-600 underline">{sellerProfile ? sellerProfile.business_name : 'No Store Connected'}</span>
+                    {sellerProfile?.verification_status === 'verified' ? (
+                      <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] rounded-lg font-bold flex items-center gap-0.5">
+                        <ShieldCheck className="h-3.5 w-3.5" /> Verified CAC Badge
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 bg-amber-100 text-amber-800 text-[10px] rounded-lg font-bold">
+                        Pending CAC Verification
+                      </span>
+                    )}
+                  </h4>
+                  <p className="text-slate-500 text-xs">
+                    Merchants with an official Corporate Affairs Commission registration badge experience a <strong>3x click rate limit improvement</strong>.
+                  </p>
                 </div>
 
-                {/* State selector */}
-                <div className="lg:col-span-3">
-                  <select
-                    value={selectedState}
-                    onChange={(e) => setSelectedState(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-3 text-xs text-slate-600 focus:outline-none focus:ring-1 focus:ring-indigo-600"
-                  >
-                    <option value="">All Nigerian States (Port Location)</option>
-                    {NIGERIAN_STATES.map(st => (
-                      <option key={st} value={st}>{st} State</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Condition selector */}
-                <div className="lg:col-span-2">
-                  <select
-                    value={selectedCondition}
-                    onChange={(e) => setSelectedCondition(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-3 text-xs text-slate-600 focus:outline-none"
-                  >
-                    <option value="">All Conditions</option>
-                    <option value="new">Brand New (Tear Rubber)</option>
-                    <option value="refurbished">Refurbished</option>
-                    <option value="used">Used / Pre-Owned</option>
-                  </select>
-                </div>
-
-                {/* Apply execution triggers */}
-                <button
-                  onClick={fetchListings}
-                  className="lg:col-span-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl py-3 font-bold text-xs cursor-pointer shadow-xs transition-colors"
-                >
-                  Reload Listings
-                </button>
+                {sellerProfile?.verification_status === 'unverified' && (
+                  <form onSubmit={handleCacSubmit} className="flex gap-2 items-center flex-wrap w-full md:w-auto">
+                    <input
+                      type="text"
+                      required
+                      maxLength={15}
+                      placeholder="Enter CAC Business ID (e.g. RC-1492)"
+                      value={cacRegNumber}
+                      onChange={(e) => setCacRegNumber(e.target.value)}
+                      className="bg-slate-50 border border-slate-250 rounded-lg p-2.5 text-xs w-full sm:w-60 focus:outline-indigo-600/40"
+                    />
+                    <button
+                      type="submit"
+                      disabled={isCacSubmitting}
+                      className="bg-indigo-600 text-white hover:bg-indigo-700 text-xs font-bold px-4 py-2.5 rounded-lg w-full sm:w-auto cursor-pointer"
+                    >
+                      {isCacSubmitting ? 'Uploading...' : 'Verify Store CAC'}
+                    </button>
+                  </form>
+                )}
               </div>
-            </div>
+            )}
 
-            {/* DYNAMIC LISTINGS TIMELINE GRID */}
-            <div>
-              <div className="flex justify-between items-center mb-5">
-                <h3 className="font-extrabold text-indigo-600 text-lg tracking-tight">
-                  {selectedCategory ? CATEGORIES.find(c => c.id === selectedCategory)?.name : 'Latest Marketplace Offerings'}
-                </h3>
-                <span className="text-xs text-slate-400 font-bold">
-                  Matches found: {listings.length}
-                </span>
+            {/* FEATURED SYSTEMS (HOMEPAGE HIGHLIGHTS) */}
+            <div className="space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-150 pb-4">
+                <div className="space-y-1">
+                  <span className="text-[10px] bg-indigo-100 text-indigo-700 font-extrabold uppercase px-2.5 py-1 rounded-full tracking-wider inline-flex items-center gap-1">
+                    <Sparkles className="h-3 w-3 text-indigo-650 animate-pulse" /> Curated Showcase
+                  </span>
+                  <h2 className="font-extrabold text-slate-900 text-xl tracking-tight">
+                    ★ Featured Healthcare Equipment & Systems
+                  </h2>
+                  <p className="text-slate-500 text-xs font-medium">
+                    Premium and high-end diagnostic systems vetted for quality, immediately available for clinic placement.
+                  </p>
+                </div>
+                <div className="text-right">
+                  <span className="text-xs bg-slate-100 text-slate-600 font-mono px-3 py-1.5 rounded-lg border border-slate-150 font-bold">
+                    Featured Systems: {featuredListings.length}
+                  </span>
+                </div>
               </div>
 
               {loadingListings ? (
-                <div className="py-20 text-center text-xs text-slate-400 animate-pulse">Loading verified medical systems catalog indexes...</div>
+                <div className="py-12 text-center text-xs text-slate-400 animate-pulse">
+                  Querying featured systems inventory...
+                </div>
+              ) : featuredListings.length === 0 ? (
+                <div className="p-8 text-center text-xs text-slate-400 bg-slate-50 border border-slate-100 rounded-2xl">
+                  No featured items currently published.
+                </div>
               ) : (
-                <>
-                  {listings.length === 0 ? (
-                    <div className="p-12 border border-dashed border-slate-200 rounded-3xl text-center bg-slate-50/50">
-                      <AlertTriangle className="h-8 w-8 text-amber-500 mx-auto mb-3" />
-                      <h4 className="font-bold text-slate-800 text-sm mb-1">No Active Listings found</h4>
-                      <p className="text-slate-400 text-xs max-w-sm mx-auto mb-4">
-                        We couldn't locate any machinery listings matching those specific criteria. Try resetting state parameters or import some with AI.
-                      </p>
-                      <button 
-                        onClick={() => { setSelectedCategory(''); setSelectedState(''); setSelectedCondition(''); setSearchQuery(''); }}
-                        className="text-white bg-indigo-600 px-4 py-2 rounded-xl text-xs font-bold"
-                      >
-                        Reset Search Filters
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                      {listings.map(item => (
-                        <ListingCard
-                          key={item.id}
-                          listing={item}
-                          onContactClick={handleContactSeller}
-                          onReportClick={(id) => setActiveReportId(id)}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                  {featuredListings.map(item => (
+                    <ListingCard
+                      key={`featured-${item.id}`}
+                      listing={item}
+                      onContactClick={handleContactSeller}
+                      onReportClick={(id) => setActiveReportId(id)}
+                      onInquireChat={handleInquireChat}
+                    />
+                  ))}
+                </div>
               )}
             </div>
+
+            {/* ACCESS CONTROLLED FULL CATALOGUE SECTION */}
+            {currentUser?.role !== 'guest' ? (
+              <div className="space-y-8 pt-4">
+                {/* HIGH-OCTANE CATEGORY NAVIGATION JUMBO CHIPS */}
+                <div>
+                  <span className="text-[11px] font-black uppercase text-slate-400 block tracking-widest mb-3">
+                    Jump to Professional Category
+                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => setSelectedCategory('')}
+                      className={`px-3 py-2 rounded-xl text-xs font-bold border transition-colors cursor-pointer ${
+                        selectedCategory === '' 
+                          ? 'bg-indigo-600 text-white border-indigo-600' 
+                          : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-600/40'
+                      }`}
+                    >
+                      All Categories ({listings.length})
+                    </button>
+                    {CATEGORIES.filter(c => !c.parent_id).map(c => (
+                      <button
+                        key={c.id}
+                        onClick={() => setSelectedCategory(c.id)}
+                        className={`px-3.5 py-2.5 rounded-xl text-xs font-bold border transition-colors cursor-pointer whitespace-nowrap ${
+                          selectedCategory === c.id 
+                            ? 'bg-indigo-600 text-white border-indigo-600' 
+                            : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-600/40'
+                        }`}
+                      >
+                        {c.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* ADVANCED MULTI-OPTIONS SEARCH BAR & FILTERS */}
+                <div className="bg-white border border-slate-150 p-5 rounded-3xl shadow-xs space-y-4">
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-3">
+                    <div className="lg:col-span-5 relative">
+                      <Search className="absolute left-3.5 top-3.5 text-slate-400 h-4.5 w-4.5" />
+                      <input
+                        type="text"
+                        placeholder="Search by diagnostic brand, specific models (Mindray, Voluson, Ultrasound, Autoclaves, Gloves...)"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 pl-11 pr-4 text-xs focus:ring-1 focus:ring-indigo-600 focus:outline-none"
+                      />
+                    </div>
+
+                    {/* State selector */}
+                    <div className="lg:col-span-3">
+                      <select
+                        value={selectedState}
+                        onChange={(e) => setSelectedState(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-3 text-xs text-slate-600 focus:outline-none focus:ring-1 focus:ring-indigo-600"
+                      >
+                        <option value="">All Nigerian States (Port Location)</option>
+                        {NIGERIAN_STATES.map(st => (
+                          <option key={st} value={st}>{st} State</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Condition selector */}
+                    <div className="lg:col-span-2">
+                      <select
+                        value={selectedCondition}
+                        onChange={(e) => setSelectedCondition(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-3 text-xs text-slate-600 focus:outline-none"
+                      >
+                        <option value="">All Conditions</option>
+                        <option value="new">Brand New (Tear Rubber)</option>
+                        <option value="refurbished">Refurbished</option>
+                        <option value="used">Used / Pre-Owned</option>
+                      </select>
+                    </div>
+
+                    {/* Apply execution triggers */}
+                    <button
+                      onClick={fetchListings}
+                      className="lg:col-span-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl py-3 font-bold text-xs cursor-pointer shadow-xs transition-colors"
+                    >
+                      Reload Listings
+                    </button>
+                  </div>
+                </div>
+
+                {/* DYNAMIC LISTINGS TIMELINE GRID */}
+                <div>
+                  <div className="flex justify-between items-center mb-5">
+                    <h3 className="font-extrabold text-indigo-600 text-lg tracking-tight">
+                      {selectedCategory ? CATEGORIES.find(c => c.id === selectedCategory)?.name : 'Latest Marketplace Offerings'}
+                    </h3>
+                    <span className="text-xs text-slate-400 font-bold">
+                      Matches found: {listings.length}
+                    </span>
+                  </div>
+
+                  {loadingListings ? (
+                    <div className="py-20 text-center text-xs text-slate-400 animate-pulse">Loading verified medical systems catalog indexes...</div>
+                  ) : (
+                    <>
+                      {listings.length === 0 ? (
+                        <div className="p-12 border border-dashed border-slate-200 rounded-3xl text-center bg-slate-50/50">
+                          <AlertTriangle className="h-8 w-8 text-amber-500 mx-auto mb-3" />
+                          <h4 className="font-bold text-slate-800 text-sm mb-1">No Active Listings found</h4>
+                          <p className="text-slate-400 text-xs max-w-sm mx-auto mb-4">
+                            We couldn't locate any machinery listings matching those specific criteria. Try resetting state parameters or import some with AI.
+                          </p>
+                          <button 
+                            onClick={() => { setSelectedCategory(''); setSelectedState(''); setSelectedCondition(''); setSearchQuery(''); }}
+                            className="text-white bg-indigo-600 px-4 py-2 rounded-xl text-xs font-bold"
+                          >
+                            Reset Search Filters
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                          {listings.map(item => (
+                            <ListingCard
+                              key={item.id}
+                              listing={item}
+                              onContactClick={handleContactSeller}
+                              onReportClick={(id) => setActiveReportId(id)}
+                              onInquireChat={handleInquireChat}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+            ) : (
+              /* GUEST DISCOVER FULL CATALOG LOCK CARD */
+              <div className="relative overflow-hidden bg-slate-50 border border-slate-200 rounded-3xl p-8 md:p-12 text-center space-y-6 shadow-xs my-6">
+                <div className="absolute inset-0 bg-radial-gradient from-indigo-50/10 to-transparent pointer-events-none" />
+                <div className="mx-auto h-16 w-16 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 shadow-xs">
+                  <ShieldCheck className="h-8 w-8 text-indigo-650 animate-bounce" />
+                </div>
+                
+                <div className="max-w-2xl mx-auto space-y-3">
+                  <span className="bg-rose-105 text-rose-800 border border-rose-200 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider inline-flex items-center gap-1">
+                    🔒 Operator Authentication Required
+                  </span>
+                  <h3 className="font-black text-slate-900 text-xl md:text-2xl tracking-tight leading-tight">
+                    Full Sourcing Catalogue Locked
+                  </h3>
+                  <p className="text-slate-500 text-xs md:text-sm leading-relaxed max-w-xl mx-auto">
+                    To safeguard pricing compliance, maintain medical merchant CAC checks, and shield direct WhatsApp contacts from automated bots, browsing the full database of 350+ products is locked to verified members.
+                  </p>
+                </div>
+
+                {/* Benefits matrix */}
+                <div className="max-w-md mx-auto grid grid-cols-1 sm:grid-cols-3 gap-3.5 pt-2 text-left">
+                  <div className="bg-white p-3.5 rounded-2xl border border-slate-150 space-y-1 shadow-2xs">
+                    <span className="text-indigo-650 font-black text-xs block">⚡ 350+ Listings</span>
+                    <p className="text-[10px] text-slate-400 font-medium leading-normal">Full specifications and calibration metrics unlocked.</p>
+                  </div>
+                  <div className="bg-white p-3.5 rounded-2xl border border-slate-150 space-y-1 shadow-2xs">
+                    <span className="text-indigo-650 font-black text-xs block">💬 Direct Contact</span>
+                    <p className="text-[10px] text-slate-400 font-medium leading-normal">Instantly click to chat with medical distributors directly.</p>
+                  </div>
+                  <div className="bg-white p-3.5 rounded-2xl border border-slate-150 space-y-1 shadow-2xs">
+                    <span className="text-indigo-650 font-black text-xs block">📋 Submit RFQs</span>
+                    <p className="text-[10px] text-slate-400 font-medium leading-normal">Publish urgent clinical equipment needs to all suppliers.</p>
+                  </div>
+                </div>
+
+                {/* Direct switch triggers */}
+                <div className="flex flex-col sm:flex-row justify-center items-center gap-3.5 pt-4">
+                  <button 
+                    onClick={() => setShowRegistrationModal(true)}
+                    className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs px-6 py-3 rounded-xl transition-all cursor-pointer shadow-md shadow-indigo-600/10 flex items-center justify-center gap-1.5"
+                  >
+                    <Sparkles className="h-4 w-4 animate-pulse" />
+                    <span>Register New Account Node</span>
+                  </button>
+                  <div className="text-xs text-slate-400 font-bold shrink-0">or Quick Login:</div>
+                  <div className="flex gap-2">
+                    <button 
+                      onClick={() => setCurrentUser({
+                        id: 'usr-5',
+                        email: 'buyer@riversidememorial.org',
+                        role: 'buyer',
+                        displayName: 'Hospital Purchaser (Fatima)',
+                        businessName: 'Riverside Memorial Hospital',
+                        phone: '+2348055554444'
+                      })}
+                      className="bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 px-3.5 py-2.5 rounded-xl text-xs font-bold cursor-pointer transition-all flex items-center gap-1"
+                    >
+                      🏥 Purchaser Fatima
+                    </button>
+                    <button 
+                      onClick={() => setCurrentUser({
+                        id: 'usr-1',
+                        email: 'chidi.obi@medlink.com.ng',
+                        role: 'seller',
+                        displayName: 'Equipment Dealer (Chidi Obi)',
+                        businessName: 'MedLink Diagnostics Ltd',
+                        phone: '+2348031234567'
+                      })}
+                      className="bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-800 px-3.5 py-2.5 rounded-xl text-xs font-bold cursor-pointer transition-all flex items-center gap-1"
+                    >
+                      🚚 Dealer Chidi Obi
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* STATS BOARD FOOTER INFO */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-slate-900 text-[#DFE7E6] rounded-3xl p-8 border border-slate-800 shadow-md">
@@ -700,56 +987,103 @@ export default function App() {
 
         {/* VIEW 2: AI Magic Paste Portal */}
         {activeTab === 'ai_magic' && (
-          <div className="space-y-6">
-            <div className="bg-slate-900 text-white rounded-3xl p-6 border border-slate-800 shadow-md">
-              <h2 className="font-black text-xl flex items-center gap-2">
-                <Sparkles className="h-5.5 w-5.5 text-emerald-400 animate-pulse" />
-                Intelligent Medical Trade Extraction
-              </h2>
-              <p className="text-slate-400 text-xs mt-1 max-w-2xl leading-relaxed text-justify">
-                Paste raw unstructured hospital supply announcements scraped from busy WhatsApp merchant directories. Google <strong>Gemini-3.5-flash</strong> will scan the message block, isolate specific metrics (titles, locations, prices, contact digits), clean language, evaluate duplicate postings, and output listing specifications in clean JSON format.
-              </p>
-            </div>
-
-            <AIDashboard 
-              sellerId={sellerProfile?.id || 'sel-1'} 
-              onListingPublished={() => {
-                setActiveTab('marketplace');
-                fetchListings();
-              }} 
+          currentUser?.role === 'guest' ? (
+            <TabGuestRestrictionNotice 
+              tabName="AI WhatsApp Sourcing Extractor" 
+              onTriggerRegister={() => setShowRegistrationModal(true)} 
+              onFastLogin={setCurrentUser} 
             />
-          </div>
+          ) : (
+            <div className="space-y-6">
+              <div className="bg-slate-900 text-white rounded-3xl p-6 border border-slate-800 shadow-md">
+                <h2 className="font-black text-xl flex items-center gap-2">
+                  <Sparkles className="h-5.5 w-5.5 text-emerald-400 animate-pulse" />
+                  Intelligent Medical Trade Extraction
+                </h2>
+                <p className="text-slate-400 text-xs mt-1 max-w-2xl leading-relaxed text-justify">
+                  Paste raw unstructured hospital supply announcements scraped from busy WhatsApp merchant directories. Google <strong>Gemini-3.5-flash</strong> will scan the message block, isolate specific metrics (titles, locations, prices, contact digits), clean language, evaluate duplicate postings, and output listing specifications in clean JSON format.
+                </p>
+              </div>
+
+              <AIDashboard 
+                sellerId={sellerProfile?.id || 'sel-1'} 
+                onListingPublished={() => {
+                  setActiveTab('marketplace');
+                  fetchListings();
+                }} 
+              />
+            </div>
+          )
         )}
 
         {/* VIEW 3: Procurement / RFQ Board */}
         {activeTab === 'procure' && (
-          <div className="space-y-6">
-            <ProcurementHub categories={CATEGORIES} sellerId={sellerProfile?.id || 'sel-1'} userId={currentUser?.id} />
-          </div>
+          currentUser?.role === 'guest' ? (
+            <TabGuestRestrictionNotice 
+              tabName="Hospital Sourcing Requests (RFQ)" 
+              onTriggerRegister={() => setShowRegistrationModal(true)} 
+              onFastLogin={setCurrentUser} 
+            />
+          ) : (
+            <div className="space-y-6">
+              <ProcurementHub categories={CATEGORIES} sellerId={sellerProfile?.id || 'sel-1'} userId={currentUser?.id} />
+            </div>
+          )
+        )}
+
+        {/* VIEW 3.5: Leads and Direct Chat CRM */}
+        {activeTab === 'leads' && (
+          currentUser?.role === 'guest' ? (
+            <TabGuestRestrictionNotice 
+              tabName="Interactive Discussion Threads & CRM Leads" 
+              onTriggerRegister={() => setShowRegistrationModal(true)} 
+              onFastLogin={setCurrentUser} 
+            />
+          ) : (
+            <div className="space-y-6">
+              <LeadsDashboard currentUserId={currentUser?.id} currentUserRole={currentUser?.role} />
+            </div>
+          )
         )}
 
         {/* VIEW 4: Admin Controls */}
         {activeTab === 'admin' && (
-          <div className="space-y-6">
-            <div className="bg-indigo-600 text-white p-6 rounded-3xl shadow-md">
-              <h2 className="font-black text-xl flex items-center gap-2">
-                <ShieldCheck className="h-5.5 w-5.5 text-white" />
-                Administrative Command Centre
-              </h2>
-              <p className="text-xs text-indigo-100 mt-1 max-w-xl">
-                Authorize pending review equipment listings, confirm healthcare seller corporate registration certifications (CAC documents), view system logs, and inspect Cloud SQL snapshot queries.
-              </p>
-            </div>
+          currentUser?.role === 'guest' ? (
+            <TabGuestRestrictionNotice 
+              tabName="Administrative Command Center" 
+              onTriggerRegister={() => setShowRegistrationModal(true)} 
+              onFastLogin={setCurrentUser} 
+            />
+          ) : (
+            <div className="space-y-6">
+              <div className="bg-indigo-600 text-white p-6 rounded-3xl shadow-md">
+                <h2 className="font-black text-xl flex items-center gap-2">
+                  <ShieldCheck className="h-5.5 w-5.5 text-white" />
+                  Administrative Command Centre
+                </h2>
+                <p className="text-xs text-indigo-100 mt-1 max-w-xl">
+                  Authorize pending review equipment listings, confirm healthcare seller corporate registration certifications (CAC documents), view system logs, and inspect Cloud SQL snapshot queries.
+                </p>
+              </div>
 
-            <AdminPanel onRefresh={fetchListings} />
-          </div>
+              <AdminPanel onRefresh={fetchListings} />
+            </div>
+          )
         )}
 
         {/* VIEW 5: DevOps Deploy IaC blueprints */}
         {activeTab === 'devops' && (
-          <div className="space-y-6">
-            <WorkspaceCloudGuide />
-          </div>
+          currentUser?.role === 'guest' ? (
+            <TabGuestRestrictionNotice 
+              tabName="IaC Blueprint Sizing Guide" 
+              onTriggerRegister={() => setShowRegistrationModal(true)} 
+              onFastLogin={setCurrentUser} 
+            />
+          ) : (
+            <div className="space-y-6">
+              <WorkspaceCloudGuide />
+            </div>
+          )
         )}
 
         {/* VIEW 6: Pricing / SaaS details */}
@@ -905,6 +1239,16 @@ export default function App() {
           </div>
         </div>
       </footer>
+      
+      <RegistrationModal 
+        isOpen={showRegistrationModal}
+        onClose={() => setShowRegistrationModal(false)}
+        onRegisterSuccess={(newUser) => {
+          // Switch active operator instantly to new workspace
+          setCurrentUser(newUser);
+          fetchAvailableUsers();
+        }}
+      />
 
     </div>
   );

@@ -8,7 +8,7 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import { NIGERIAN_STATES, CATEGORIES, INITIAL_SELLERS, INITIAL_LISTINGS, INITIAL_PROCUREMENT_REQUESTS } from "./src/data";
-import { Listing, Seller, Category, ProcurementRequest, ProcurementResponse, Report, VerificationRequest, FirestoreNotification } from "./src/types";
+import { Listing, Seller, Category, ProcurementRequest, ProcurementResponse, Report, VerificationRequest, FirestoreNotification, Lead, ChatMessage } from "./src/types";
 
 const app = express();
 const PORT = 3000;
@@ -93,6 +93,66 @@ let notificationsCollection: FirestoreNotification[] = [
     message: 'Tuttnauer tabletop autoclave listing uploaded by MedLink requires verification.',
     read: false,
     created_at: new Date().toISOString()
+  }
+];
+
+let leadsCollection: Lead[] = [
+  {
+    id: 'lead-1',
+    seller_id: 'sel-1', // MedLink Diagnostics Ltd
+    buyer_id: 'usr-5', // Riverside Memorial Hospital
+    buyer_name: 'Riverside Memorial Hospital',
+    buyer_contact: 'buyer@riversidememorial.org (+2348055554444)',
+    title: 'Mindray uMec 12 Patient Monitor',
+    type: 'rfq_offer',
+    source_id: 'req-1',
+    status: 'discussion',
+    notes: 'Hospital purchaser Fatima is interested in our 6-month warranty and rapid Abuja courier dispatch.',
+    price_offered: 1350000,
+    last_activity_at: new Date(Date.now() - 1200000).toISOString(),
+    created_at: new Date(Date.now() - 3600000 * 2).toISOString()
+  },
+  {
+    id: 'lead-2',
+    seller_id: 'sel-1',
+    buyer_id: 'usr-5',
+    buyer_name: 'Riverside Memorial Hospital',
+    buyer_contact: 'buyer@riversidememorial.org',
+    title: 'General Autoclave Sourcing Inquiry',
+    type: 'listing_inquiry',
+    source_id: 'list-3',
+    status: 'new',
+    notes: 'Buyer requested detailed brochure and technical calibration parameters.',
+    price_offered: 1100000,
+    last_activity_at: new Date(Date.now() - 7200000).toISOString(),
+    created_at: new Date(Date.now() - 7200000).toISOString()
+  }
+];
+
+let chatMessagesCollection: ChatMessage[] = [
+  {
+    id: 'msg-1',
+    lead_id: 'lead-1',
+    sender_id: 'usr-1',
+    sender_name: 'MedLink Diagnostics Ltd (Chidi Obi)',
+    message: 'Hello, we noticed your sourcing request for patient monitors. We have 3 units of extremely clean, US-used Mindray patient monitors ready for delivery inside Abuja tomorrow. We can discount slightly if you pack all three.',
+    created_at: new Date(Date.now() - 3600000 * 2).toISOString()
+  },
+  {
+    id: 'msg-2',
+    lead_id: 'lead-1',
+    sender_id: 'usr-5',
+    sender_name: 'Riverside Memorial Hospital (Fatima)',
+    message: 'Thanks for reaching out Chidi. Do you offer warranty coverage on these used monitors?',
+    created_at: new Date(Date.now() - 1800000).toISOString()
+  },
+  {
+    id: 'msg-3',
+    lead_id: 'lead-1',
+    sender_id: 'usr-1',
+    sender_name: 'MedLink Diagnostics Ltd (Chidi Obi)',
+    message: 'Yes, we provide 6 months dealer warranty on parts and servicing. We also have a calibration lab in Lagos.',
+    created_at: new Date(Date.now() - 1200000).toISOString()
   }
 ];
 
@@ -585,6 +645,43 @@ app.post("/api/procurement-requests/:id/respond", (req, res) => {
     created_at: new Date().toISOString()
   });
 
+  // Automatically create a CRM Lead for the Seller & Buyer to chat/track
+  let existingLead = leadsCollection.find(l => l.seller_id === seller.id && l.buyer_id === (request.user_id || 'usr-5') && l.source_id === id);
+  if (!existingLead) {
+    const buyerUser = usersCollection.find(u => u.id === (request.user_id || 'usr-5'));
+    const buyerEmailName = buyerUser ? buyerUser.email.split('@')[0].toUpperCase() + ' Hospital' : 'Riverside Memorial Hospital';
+    existingLead = {
+      id: `lead-${Date.now()}`,
+      seller_id: seller.id,
+      buyer_id: request.user_id || 'usr-5',
+      buyer_name: buyerEmailName,
+      buyer_contact: request.buyer_contact || buyerUser?.phone || buyerUser?.email || 'Contact Sourcing Office',
+      title: request.title,
+      type: 'rfq_offer',
+      source_id: id,
+      status: 'quote_sent',
+      notes: `Auto-generated lead from RFQ response. Initial bid: ₦${Number(price).toLocaleString()}`,
+      price_offered: Number(price),
+      last_activity_at: new Date().toISOString(),
+      created_at: new Date().toISOString()
+    };
+    leadsCollection.unshift(existingLead);
+  } else {
+    existingLead.status = 'quote_sent';
+    existingLead.price_offered = Number(price);
+    existingLead.last_activity_at = new Date().toISOString();
+  }
+
+  // Also send the initial bid message to the chat thread
+  chatMessagesCollection.push({
+    id: `msg-${Date.now()}-auto`,
+    lead_id: existingLead.id,
+    sender_id: seller.user_id || 'usr-1',
+    sender_name: `${seller.business_name} (Vendor)`,
+    message: message || `We have submitted a bid for your RFQ "${request.title}" offering "${offered_product || request.title}" for ₦${Number(price).toLocaleString()}`,
+    created_at: new Date().toISOString()
+  });
+
   res.json(newResponse);
 });
 
@@ -811,6 +908,174 @@ app.get("/api/admin/search-insights", (req, res) => {
   });
 });
 
+// ==========================================
+// CRM LEAD TRACKING & CHAT API
+// ==========================================
+
+// GET all leads for a specific user role/profile
+app.get("/api/leads", (req, res) => {
+  const { user_id } = req.query;
+  if (!user_id) {
+    return res.json(leadsCollection);
+  }
+  
+  // Find user and check their role
+  const user = usersCollection.find(u => u.id === user_id);
+  if (!user) {
+    return res.json([]);
+  }
+  
+  if (user.role === 'seller') {
+    const seller = sellersCollection.find(s => s.user_id === user.id);
+    if (!seller) return res.json([]);
+    return res.json(leadsCollection.filter(l => l.seller_id === seller.id));
+  } else if (user.role === 'buyer') {
+    return res.json(leadsCollection.filter(l => l.buyer_id === user.id));
+  } else {
+    // Admin / Moderator gets everything
+    return res.json(leadsCollection);
+  }
+});
+
+// POST update lead status or notes
+app.post("/api/leads/update-status", (req, res) => {
+  const { lead_id, status, notes, price_offered } = req.body;
+  const lead = leadsCollection.find(l => l.id === lead_id);
+  if (!lead) return res.status(404).json({ error: "Lead not found" });
+  
+  if (status) lead.status = status;
+  if (notes !== undefined) lead.notes = notes;
+  if (price_offered !== undefined) lead.price_offered = Number(price_offered);
+  lead.last_activity_at = new Date().toISOString();
+  
+  logActivity('System', 'UPDATE_LEAD', 'CRM', `Updated lead ${lead.id} status to ${status}`);
+  res.json(lead);
+});
+
+// GET chat message history
+app.get("/api/chats/:lead_id", (req, res) => {
+  const { lead_id } = req.params;
+  const messages = chatMessagesCollection.filter(m => m.lead_id === lead_id);
+  res.json(messages);
+});
+
+// POST send new chat message
+app.post("/api/chats/message", (req, res) => {
+  const { lead_id, sender_id, message } = req.body;
+  if (!lead_id || !sender_id || !message) {
+    return res.status(400).json({ error: "Missing required chat parameters" });
+  }
+  
+  const lead = leadsCollection.find(l => l.id === lead_id);
+  if (!lead) return res.status(404).json({ error: "Lead not found" });
+  
+  // Resolve sender name
+  let senderName = "User";
+  const senderUser = usersCollection.find(u => u.id === sender_id);
+  if (senderUser) {
+    if (senderUser.role === 'seller') {
+      const seller = sellersCollection.find(s => s.user_id === sender_id);
+      senderName = seller ? `${seller.business_name} (Vendor)` : senderUser.email;
+    } else if (senderUser.role === 'buyer') {
+      senderName = `${senderUser.email.split('@')[0].toUpperCase()} Hospital`;
+    } else {
+      senderName = "System Moderator";
+    }
+  }
+  
+  const newMsg: ChatMessage = {
+    id: `msg-${Date.now()}`,
+    lead_id,
+    sender_id,
+    sender_name: senderName,
+    message,
+    created_at: new Date().toISOString()
+  };
+  
+  chatMessagesCollection.push(newMsg);
+  lead.last_activity_at = new Date().toISOString();
+  
+  // Create notification for recipient
+  const receiverUserId = sender_id === lead.buyer_id 
+    ? (sellersCollection.find(s => s.id === lead.seller_id)?.user_id || 'usr-1')
+    : lead.buyer_id;
+    
+  notificationsCollection.unshift({
+    id: `notif-${Date.now()}-chat`,
+    user_id: receiverUserId,
+    type: 'chat_message',
+    title: `New Message from ${senderName.split('(')[0].trim()}`,
+    message: message.length > 50 ? `${message.substring(0, 50)}...` : message,
+    read: false,
+    created_at: new Date().toISOString()
+  });
+  
+  res.json(newMsg);
+});
+
+// POST buy inquiry start on specific listing
+app.post("/api/leads/inquire", (req, res) => {
+  const { listing_id, buyer_id, message } = req.body;
+  
+  const listing = listingsCollection.find(l => l.id === listing_id);
+  if (!listing) return res.status(404).json({ error: "Equipment listing not found" });
+  
+  const buyer = usersCollection.find(u => u.id === buyer_id) || usersCollection.find(u => u.role === 'buyer');
+  if (!buyer) return res.status(404).json({ error: "Buyer profile not found" });
+  
+  const seller = sellersCollection.find(s => s.id === listing.seller_id);
+  if (!seller) return res.status(404).json({ error: "Seller profile not found" });
+  
+  // Check existing
+  let lead = leadsCollection.find(l => l.seller_id === seller.id && l.buyer_id === buyer.id && l.source_id === listing_id);
+  let isNew = false;
+  if (!lead) {
+    isNew = true;
+    lead = {
+      id: `lead-${Date.now()}`,
+      seller_id: seller.id,
+      buyer_id: buyer.id,
+      buyer_name: buyer.email.split('@')[0].toUpperCase() + ' Hospital',
+      buyer_contact: buyer.phone || buyer.email || '+2348055554444',
+      title: `${listing.title} Inquiry`,
+      type: 'listing_inquiry',
+      source_id: listing_id,
+      status: 'new',
+      notes: `Direct listing inquiry from client buyer Fatima. Item: "${listing.title}". Listed price: ₦${listing.price.toLocaleString()}`,
+      price_offered: listing.price,
+      last_activity_at: new Date().toISOString(),
+      created_at: new Date().toISOString()
+    };
+    leadsCollection.unshift(lead);
+  } else {
+    lead.last_activity_at = new Date().toISOString();
+  }
+  
+  // Add message
+  const newMsg: ChatMessage = {
+    id: `msg-${Date.now()}`,
+    lead_id: lead.id,
+    sender_id: buyer.id,
+    sender_name: `${buyer.email.split('@')[0].toUpperCase()} Hospital (Buyer)`,
+    message: message || `Hello, I am interested in your listed medical equipment "${listing.title}". Can you give us more details?`,
+    created_at: new Date().toISOString()
+  };
+  chatMessagesCollection.push(newMsg);
+  
+  // Notify seller user
+  notificationsCollection.unshift({
+    id: `notif-${Date.now()}-inq`,
+    user_id: seller.user_id || 'usr-1',
+    type: 'chat_message',
+    title: `New Inquiry Lead: ${listing.title}`,
+    message: `Buyer Fatima: "${newMsg.message.substring(0, 45)}..."`,
+    read: false,
+    created_at: new Date().toISOString()
+  });
+  
+  res.json({ success: true, lead, isNew });
+});
+
 // GET user notifications
 app.get("/api/notifications", (req, res) => {
   const { user_id } = req.query;
@@ -833,6 +1098,111 @@ app.post("/api/notifications/dismiss", (req, res) => {
     notificationsCollection.forEach(n => n.read = true);
   }
   res.json({ success: true });
+});
+
+// Update user profile info dynamically on backend
+app.post("/api/users/update", (req, res) => {
+  const { user_id, email, phone, businessName, cac_number } = req.body;
+  if (!user_id) {
+    return res.status(400).json({ error: "user_id is required" });
+  }
+
+  const user = usersCollection.find(u => u.id === user_id);
+  if (!user) {
+    return res.status(404).json({ error: "User not found" });
+  }
+
+  if (email) user.email = email;
+  if (phone) user.phone = phone;
+
+  // If the user is a seller, update the seller's profile
+  if (user.role === 'seller') {
+    const seller = sellersCollection.find(s => s.user_id === user.id);
+    if (seller) {
+      if (businessName) seller.business_name = businessName;
+      if (phone) {
+        seller.phone_number = phone;
+        seller.whatsapp_number = phone; // sync whatsapp
+      }
+      if (email) seller.email = email;
+      if (cac_number) seller.cac_number = cac_number;
+    }
+  }
+
+  // If the user is a buyer, update their hospital profile representation
+  if (user.role === 'buyer') {
+    // If we have leads involving this buyer, keep the name or contact updated
+    leadsCollection.forEach(l => {
+      if (l.buyer_id === user.id) {
+        if (businessName) l.buyer_name = businessName;
+        if (phone) l.buyer_contact = `${email} (${phone})`;
+      }
+    });
+  }
+
+  logActivity(user.email, 'UPDATE_PROFILE', 'User Settings', `Updated profile credentials on database: Name: ${businessName}, Phone: ${phone}`);
+  res.json({ success: true, user });
+});
+
+// Dynamic Account Registration Endpoint
+app.post("/api/auth/register", (req, res) => {
+  const { email, phone, role, businessName, cacNumber, state, city } = req.body;
+  
+  if (!email || !role || !businessName) {
+    return res.status(400).json({ error: "Required fields missing (email, role, businessName)" });
+  }
+
+  const normalizedEmail = email.toLowerCase().trim();
+  const existingUser = usersCollection.find(u => u.email.toLowerCase() === normalizedEmail);
+  if (existingUser) {
+    return res.status(400).json({ error: "An operator with this email is already registered." });
+  }
+
+  const userId = `usr-${Date.now()}`;
+  const newUser = {
+    id: userId,
+    firebase_uid: `f-mock-${Date.now()}`,
+    email: normalizedEmail,
+    phone: phone || '+2348000000000',
+    role: role || 'seller',
+    status: 'active'
+  };
+
+  usersCollection.push(newUser);
+
+  let sellerObj = null;
+
+  if (role === 'seller') {
+    const sellerId = `sel-${Date.now()}`;
+    const newSeller: Seller = {
+      id: sellerId,
+      user_id: userId,
+      business_name: businessName,
+      contact_name: normalizedEmail.split('@')[0],
+      whatsapp_number: phone || '+2348000000000',
+      phone_number: phone || '+2348000000000',
+      email: normalizedEmail,
+      state: state || 'Lagos',
+      city: city || 'Ikeja',
+      verification_status: 'unverified',
+      subscription_plan: 'free',
+      active_listings_count: 0,
+      rating_placeholder: 5.0,
+      created_at: new Date().toISOString(),
+      cac_number: cacNumber || ''
+    };
+    sellersCollection.push(newSeller);
+    sellerObj = newSeller;
+  }
+
+  logActivity(normalizedEmail, 'REGISTER', 'User', `Registered new clinical account. Role: ${role}, Entity: ${businessName}`);
+  
+  res.json({
+    success: true,
+    user: newUser,
+    seller: sellerObj,
+    businessName: businessName
+  });
 });
 
 // ==========================================

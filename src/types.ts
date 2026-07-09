@@ -198,3 +198,31 @@ export interface Payment {
   gateway: 'paystack' | 'flutterwave' | 'stripe';
   created_at: string;
 }
+
+export type LeadStatus = 'new' | 'discussion' | 'quote_sent' | 'won' | 'lost';
+
+export interface Lead {
+  id: string;
+  seller_id: string;
+  buyer_id: string;
+  buyer_name: string;
+  buyer_contact: string;
+  title: string;
+  type: 'listing_inquiry' | 'rfq_offer';
+  source_id: string;
+  status: LeadStatus;
+  notes?: string;
+  price_offered?: number;
+  last_activity_at: string;
+  created_at: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  lead_id: string;
+  sender_id: string;
+  sender_name: string;
+  message: string;
+  created_at: string;
+}
+
