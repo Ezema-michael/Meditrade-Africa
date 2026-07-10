@@ -284,7 +284,12 @@ export default function AdminPanel({ onRefresh }: AdminPanelProps) {
                         <h5 className="font-bold text-slate-800 text-sm">{l.title}</h5>
                         <p className="text-slate-500 text-xs max-w-xl leading-relaxed">{l.description}</p>
                         <div className="text-[10px] text-slate-400 font-mono">
-                          Seller: {l.seller_name} ({l.seller_whatsapp}) | State: {l.state} | Price: ₦{Number(l.price).toLocaleString()}
+                          Seller: {l.seller_name} ({l.seller_whatsapp}) | State: {l.state} | Price: ₦{Number(l.price).toLocaleString()} | Agreement: <span className="font-bold text-indigo-600 uppercase">
+                            {l.listing_type === 'make_offer' ? 'Make Offer' : 
+                             l.listing_type === 'auction_parts_faulty' ? 'Auction: Parts/Faulty' :
+                             l.listing_type === 'scrap_salvage' ? 'Scrap/Salvage' :
+                             l.listing_type === 'auction_only' ? 'Auction Only' : 'Fixed Price'}
+                          </span>
                         </div>
                       </div>
 

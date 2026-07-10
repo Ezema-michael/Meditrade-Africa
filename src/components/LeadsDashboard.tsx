@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   MessageSquare, TrendingUp, User, DollarSign, Clock, 
-  Edit3, Send, RefreshCw, FileText, Check, AlertCircle, ChevronRight, Phone, Mail
+  Edit3, Send, RefreshCw, FileText, Check, AlertCircle, ChevronRight, Phone, Mail, Sparkles
 } from 'lucide-react';
 import { Lead, LeadStatus, ChatMessage } from '../types';
 
@@ -22,6 +22,57 @@ export default function LeadsDashboard({ currentUserId, currentUserRole }: Leads
   const [sendingMsg, setSendingMsg] = useState(false);
   const [savingNotes, setSavingNotes] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // Active negotiation offer states
+  const [activeOffer, setActiveOffer] = useState<any | null>(null);
+  const [counterAmountText, setCounterAmountText] = useState('');
+  const [negotiatingStatus, setNegotiatingStatus] = useState(false);
+
+  const fetchActiveOffer = async (buyerId: string, listingId: string) => {
+    try {
+      const res = await fetch(`/api/offers?buyer_id=${buyerId}&listing_id=${listingId}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.length > 0) {
+          setActiveOffer(data[0]);
+          setCounterAmountText(data[0].counter_amount?.toString() || '');
+        } else {
+          setActiveOffer(null);
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching active offer:', err);
+    }
+  };
+
+  const handleUpdateOfferStatus = async (status: 'accepted' | 'declined' | 'countered', counterAmt?: number) => {
+    if (!activeOffer) return;
+    setNegotiatingStatus(true);
+    try {
+      const res = await fetch(`/api/offers/${activeOffer.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status,
+          counter_amount: counterAmt
+        })
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setActiveOffer(updated);
+        // Refresh leads pipeline state to update deal size / statuses
+        fetchLeads(true);
+        alert(`Offer successfully ${status}!`);
+      } else {
+        alert('Failed to update offer status.');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Error updating offer negotiation.');
+    } finally {
+      setNegotiatingStatus(false);
+    }
+  };
 
   // Fetch leads
   const fetchLeads = async (silent = false) => {
@@ -80,12 +131,17 @@ export default function LeadsDashboard({ currentUserId, currentUserRole }: Leads
       setNotesText(selectedLead.notes || '');
       setPriceText(selectedLead.price_offered?.toString() || '');
       
+      // Load active negotiation offer if it exists
+      fetchActiveOffer(selectedLead.buyer_id, selectedLead.source_id);
+
       const chatInterval = setInterval(() => {
         fetchChats(selectedLead.id, true);
+        fetchActiveOffer(selectedLead.buyer_id, selectedLead.source_id);
       }, 3000);
       return () => clearInterval(chatInterval);
     } else {
       setChatMessages([]);
+      setActiveOffer(null);
     }
   }, [selectedLead?.id]);
 
@@ -373,6 +429,116 @@ export default function LeadsDashboard({ currentUserId, currentUserRole }: Leads
                     {savingNotes ? 'Saving...' : 'Save CRM parameters'}
                   </button>
                 </div>
+
+                {/* DYNAMIC NEGOTIATION OFFER MANAGEMENT SHEET */}
+                {activeOffer && (
+                  <div className="bg-indigo-50/50 border border-indigo-150 rounded-2xl p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <Sparkles className="h-4 w-4 text-indigo-600 animate-pulse" />
+                        <span className="text-[10.5px] font-black text-indigo-950 uppercase tracking-wider">
+                          Active Price Negotiation (Make Offer Listing)
+                        </span>
+                      </div>
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold uppercase ${
+                        activeOffer.status === 'pending' ? 'bg-amber-100 text-amber-800 border border-amber-200' :
+                        activeOffer.status === 'accepted' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' :
+                        activeOffer.status === 'countered' ? 'bg-blue-100 text-blue-800 border border-blue-200' :
+                        'bg-slate-100 text-slate-800 border border-slate-200'
+                      }`}>
+                        Offer: {activeOffer.status}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                      <div className="bg-white/80 p-3 rounded-xl border border-indigo-100/50 space-y-1">
+                        <span className="text-[10px] text-slate-400 font-bold block uppercase">Buyer's Proposed Amount</span>
+                        <p className="text-sm font-black text-slate-800">
+                          {activeOffer.currency === 'USD' ? '$' : '₦'}{activeOffer.offer_amount.toLocaleString()}
+                        </p>
+                        {activeOffer.message && (
+                          <p className="text-[10px] text-slate-500 italic mt-1 bg-slate-50 p-1.5 rounded border border-slate-100 line-clamp-2" title={activeOffer.message}>
+                            "{activeOffer.message}"
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="bg-white/80 p-3 rounded-xl border border-indigo-100/50 space-y-1.5 flex flex-col justify-center">
+                        {activeOffer.status === 'pending' && (
+                          <div className="space-y-2">
+                            <span className="text-[10px] text-slate-400 font-bold block uppercase">Negotiation Actions</span>
+                            <div className="flex flex-wrap gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateOfferStatus('accepted')}
+                                disabled={negotiatingStatus}
+                                className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[10px] px-3 py-1.5 rounded-md cursor-pointer transition-all shadow-2xs"
+                              >
+                                Accept Offer
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateOfferStatus('declined')}
+                                disabled={negotiatingStatus}
+                                className="bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-[10px] px-3 py-1.5 rounded-md cursor-pointer transition-all shadow-2xs"
+                              >
+                                Decline
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {activeOffer.status === 'countered' && (
+                          <div>
+                            <span className="text-[10px] text-slate-400 font-bold block uppercase">Counter-Offer Sent</span>
+                            <p className="text-xs font-bold text-indigo-750">
+                              {activeOffer.currency === 'USD' ? '$' : '₦'}{Number(activeOffer.counter_amount).toLocaleString()}
+                            </p>
+                            <span className="text-[9px] text-slate-400">Waiting for buyer response.</span>
+                          </div>
+                        )}
+
+                        {activeOffer.status === 'accepted' && (
+                          <div className="text-emerald-700 font-bold space-y-0.5">
+                            <span className="text-[11px] block">✓ Accepted Sourcing Price</span>
+                            <p className="text-[10px] text-slate-500 font-normal leading-normal">Deal finalized. An invoice template has been processed in direct secure chat!</p>
+                          </div>
+                        )}
+
+                        {activeOffer.status === 'declined' && (
+                          <div className="text-rose-700 font-bold space-y-0.5">
+                            <span className="text-[11px] block">✗ Offer Declined</span>
+                            <p className="text-[10px] text-slate-500 font-normal leading-normal">This deal negotiation has been officially closed as unsuccessful.</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Counter offer dialog trigger if pending */}
+                    {activeOffer.status === 'pending' && (
+                      <div className="pt-2.5 border-t border-indigo-100/50 flex items-center gap-2">
+                        <input
+                          type="number"
+                          value={counterAmountText}
+                          onChange={(e) => setCounterAmountText(e.target.value)}
+                          placeholder={`Counter Offer size (${activeOffer.currency})`}
+                          className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs w-48 font-bold focus:outline-none focus:border-indigo-650"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!counterAmountText) return alert('Enter counter offer amount first.');
+                            handleUpdateOfferStatus('countered', Number(counterAmountText));
+                          }}
+                          disabled={negotiatingStatus}
+                          className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[10.5px] px-3 py-1.5 rounded-lg cursor-pointer transition-colors shrink-0"
+                        >
+                          Send Counter Proposal
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Chat Window section */}

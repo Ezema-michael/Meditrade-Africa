@@ -55,7 +55,7 @@ export interface Listing {
   slug: string;
   brand: string;
   model: string;
-  condition: 'new' | 'used' | 'refurbished';
+  condition: 'new' | 'refurbished' | 'working_used' | 'used' | 'faulty' | 'parts_only' | 'scrap';
   price: number;
   currency: 'NGN' | 'USD';
   negotiable: boolean;
@@ -75,8 +75,25 @@ export interface Listing {
   is_ai_extracted?: boolean;
   spam_score?: number;
   spam_reasons?: string[];
+  listing_type?: 'fixed' | 'make_offer' | 'auction_parts_faulty' | 'scrap_salvage' | 'auction_only';
   created_at: string;
   updated_at: string;
+}
+
+export interface Offer {
+  id: string;
+  listing_id: string;
+  listing_title: string;
+  seller_id: string;
+  buyer_id?: string;
+  buyer_name: string;
+  buyer_contact: string; // WhatsApp or email
+  offer_amount: number;
+  currency: 'NGN' | 'USD';
+  message?: string;
+  status: 'pending' | 'accepted' | 'declined' | 'countered';
+  counter_amount?: number;
+  created_at: string;
 }
 
 export interface ListingImage {
@@ -223,6 +240,34 @@ export interface ChatMessage {
   sender_id: string;
   sender_name: string;
   message: string;
+  created_at: string;
+}
+
+export interface Engineer {
+  id: string;
+  name: string;
+  specialty: string;
+  experience_years: number;
+  phone: string;
+  email: string;
+  state: string;
+  city: string;
+  bio: string;
+  avatar_url?: string;
+  verified_status: 'verified' | 'unverified';
+  average_rating: number;
+  services_offered: string[];
+  created_at: string;
+}
+
+export interface EngineerReview {
+  id: string;
+  engineer_id: string;
+  reviewer_id: string;
+  reviewer_name: string;
+  reviewer_business: string;
+  rating: number;
+  comment: string;
   created_at: string;
 }
 

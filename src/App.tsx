@@ -29,7 +29,8 @@ import {
   UserCheck,
   Send,
   Bell,
-  FileText
+  FileText,
+  Wrench
 } from 'lucide-react';
 
 import { Listing, Category, Seller, SubscriptionPlan } from './types';
@@ -44,6 +45,7 @@ import WorkspaceCloudGuide from './components/WorkspaceCloudGuide';
 import LeadsDashboard from './components/LeadsDashboard';
 import UserProfileMenu from './components/UserProfileMenu';
 import RegistrationModal from './components/RegistrationModal';
+import EngineersDashboard from './components/EngineersDashboard';
 
 interface TabGuestRestrictionNoticeProps {
   tabName: string;
@@ -116,7 +118,7 @@ function TabGuestRestrictionNotice({ tabName, onTriggerRegister, onFastLogin }: 
 
 export default function App() {
   // Current active viewport tab
-  const [activeTab, setActiveTab] = useState<'marketplace' | 'ai_magic' | 'procure' | 'leads' | 'admin' | 'devops' | 'pricing'>('marketplace');
+  const [activeTab, setActiveTab] = useState<'marketplace' | 'ai_magic' | 'procure' | 'leads' | 'admin' | 'devops' | 'pricing' | 'engineers'>('marketplace');
 
   // Directory listing states
   const [listings, setListings] = useState<Listing[]>([]);
@@ -524,6 +526,15 @@ export default function App() {
               <span>Leads & Direct Chat</span>
             </button>
             <button
+              onClick={() => setActiveTab('engineers')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                activeTab === 'engineers' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+              }`}
+            >
+              <Wrench className="h-4 w-4 text-indigo-600 animate-pulse" />
+              <span>Engineers & Services</span>
+            </button>
+            <button
               onClick={() => setActiveTab('pricing')}
               className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                 activeTab === 'pricing' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
@@ -575,6 +586,7 @@ export default function App() {
           <button onClick={() => setActiveTab('ai_magic')} className={`px-4 py-3.5 text-xs font-bold whitespace-nowrap cursor-pointer ${activeTab === 'ai_magic' ? 'border-b-2 border-indigo-600 text-indigo-600' : ''}`}>WhatsApp Import</button>
           <button onClick={() => setActiveTab('procure')} className={`px-4 py-3.5 text-xs font-bold whitespace-nowrap cursor-pointer ${activeTab === 'procure' ? 'border-b-2 border-indigo-600 text-indigo-600' : ''}`}>Hospital RFQs</button>
           <button onClick={() => setActiveTab('leads')} className={`px-4 py-3.5 text-xs font-bold whitespace-nowrap cursor-pointer ${activeTab === 'leads' ? 'border-b-2 border-indigo-600 text-indigo-600' : ''}`}>Leads & Chat</button>
+          <button onClick={() => setActiveTab('engineers')} className={`px-4 py-3.5 text-xs font-bold whitespace-nowrap cursor-pointer ${activeTab === 'engineers' ? 'border-b-2 border-indigo-600 text-indigo-600' : ''}`}>Engineers & Services</button>
           <button onClick={() => setActiveTab('admin')} className={`px-4 py-3.5 text-xs font-bold whitespace-nowrap cursor-pointer ${activeTab === 'admin' ? 'border-b-2 border-indigo-600 text-indigo-600' : ''}`}>Moderation Console</button>
           <button onClick={() => setActiveTab('devops')} className={`px-4 py-3.5 text-xs font-bold whitespace-nowrap cursor-pointer ${activeTab === 'devops' ? 'border-b-2 border-indigo-600 text-indigo-600' : ''}`}>GCP IAC Blueprints</button>
         </div>
@@ -701,6 +713,7 @@ export default function App() {
                       onContactClick={handleContactSeller}
                       onReportClick={(id) => setActiveReportId(id)}
                       onInquireChat={handleInquireChat}
+                      currentUser={currentUser}
                     />
                   ))}
                 </div>
@@ -778,9 +791,12 @@ export default function App() {
                         className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-3 text-xs text-slate-600 focus:outline-none"
                       >
                         <option value="">All Conditions</option>
-                        <option value="new">Brand New (Tear Rubber)</option>
-                        <option value="refurbished">Refurbished</option>
-                        <option value="used">Used / Pre-Owned</option>
+                        <option value="new">New (Brand New / Unused)</option>
+                        <option value="refurbished">Refurbished Standard</option>
+                        <option value="working_used">Working Used</option>
+                        <option value="faulty">Faulty (Needs repair)</option>
+                        <option value="parts_only">For Parts Only</option>
+                        <option value="scrap">Scrap (Salvage value)</option>
                       </select>
                     </div>
 
@@ -832,6 +848,7 @@ export default function App() {
                               onContactClick={handleContactSeller}
                               onReportClick={(id) => setActiveReportId(id)}
                               onInquireChat={handleInquireChat}
+                              currentUser={currentUser}
                             />
                           ))}
                         </div>
@@ -1140,6 +1157,14 @@ export default function App() {
               })}
             </div>
           </div>
+        )}
+
+        {/* VIEW 7: Biomedical Engineers & Services Registry */}
+        {activeTab === 'engineers' && (
+          <EngineersDashboard 
+            currentUser={currentUser} 
+            onTriggerRegister={() => setShowRegistrationModal(true)} 
+          />
         )}
 
       </main>

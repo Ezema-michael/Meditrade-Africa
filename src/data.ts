@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Category, Listing, Seller, ProcurementRequest, SubscriptionPlan } from './types';
+import { Category, Listing, Seller, ProcurementRequest, SubscriptionPlan, Engineer, EngineerReview, Offer } from './types';
 
 export const NIGERIAN_STATES = [
   'Lagos',
@@ -173,6 +173,7 @@ export const INITIAL_LISTINGS: Listing[] = [
     seller_name: 'MedLink Diagnostics Ltd',
     seller_whatsapp: '+2348031234567',
     seller_verified: true,
+    listing_type: 'fixed',
     created_at: '2026-05-10T10:00:00Z',
     updated_at: '2026-05-12T08:30:00Z'
   },
@@ -204,6 +205,7 @@ export const INITIAL_LISTINGS: Listing[] = [
     seller_name: 'West Africa Medical Suppliers',
     seller_whatsapp: '+2348123456789',
     seller_verified: true,
+    listing_type: 'make_offer',
     created_at: '2026-05-18T15:20:00Z',
     updated_at: '2026-05-19T10:00:00Z'
   },
@@ -234,6 +236,7 @@ export const INITIAL_LISTINGS: Listing[] = [
     seller_name: 'West Africa Medical Suppliers',
     seller_whatsapp: '+2348123456789',
     seller_verified: true,
+    listing_type: 'make_offer',
     created_at: '2026-05-22T08:00:00Z',
     updated_at: '2026-05-22T08:00:00Z'
   },
@@ -335,3 +338,146 @@ export const INITIAL_PROCUREMENT_REQUESTS: ProcurementRequest[] = [
     created_at: '2026-05-27T09:12:00Z'
   }
 ];
+
+export const INITIAL_ENGINEERS: Engineer[] = [
+  {
+    id: 'eng-1',
+    name: 'Engr. Kelechi Okafor',
+    specialty: 'Ultrasound & Radiology Calibration',
+    experience_years: 12,
+    phone: '+2348039998888',
+    email: 'k.okafor@biomed-tech.ng',
+    state: 'Lagos',
+    city: 'Surulere',
+    bio: 'Certified clinical engineer trained in Germany. Specializes in ultrasound probe repairs, CT/MRI mechanical alignment, and X-ray tube replacements. Authorised service partner for major diagnostic brands.',
+    avatar_url: 'https://images.unsplash.com/photo-1537368910025-700350fe46c7?w=300&auto=format&fit=crop&q=80',
+    verified_status: 'verified',
+    average_rating: 4.8,
+    services_offered: ['Installation', 'Diagnostic Calibration', 'Board Repair', 'Preventative Maintenance Contract'],
+    created_at: '2025-01-10T09:00:00Z'
+  },
+  {
+    id: 'eng-2',
+    name: 'Engr. Amina Yusuf',
+    specialty: 'Laboratory & Biosafety Maintenance',
+    experience_years: 8,
+    phone: '+2348025556666',
+    email: 'amina.yusuf@labservices.ng',
+    state: 'Abuja (FCT)',
+    city: 'Garki',
+    bio: 'Specialist in clinical laboratory equipment. Deep experience calibrating blood analyzers, centrifuges, PCR thermocyclers, and maintaining class II biosafety cabinets for reference hospitals.',
+    avatar_url: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=300&auto=format&fit=crop&q=80',
+    verified_status: 'verified',
+    average_rating: 4.5,
+    services_offered: ['Hematology Analyzer Setup', 'Biosafety Certification', 'Incubator Calibration'],
+    created_at: '2025-02-15T11:30:00Z'
+  },
+  {
+    id: 'eng-3',
+    name: 'Engr. Tunde Folorunsho',
+    specialty: 'ICU Ventilators & Anaesthetic Workstations',
+    experience_years: 15,
+    phone: '+2347031112222',
+    email: 'tunde.folorunsho@icu-biomed.com',
+    state: 'Oyo',
+    city: 'Ibadan',
+    bio: 'Biomedical veteran with 15+ years field experience. Certified on premium ICU ventilator pipelines and anesthesia delivery gas systems. Frequently consulted by university teaching hospitals.',
+    avatar_url: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=300&auto=format&fit=crop&q=80',
+    verified_status: 'verified',
+    average_rating: 4.9,
+    services_offered: ['Ventilator Overhaul', 'O2 Concentrator Refurbishing', 'Anesthesia Gas Testing'],
+    created_at: '2024-11-20T14:45:00Z'
+  },
+  {
+    id: 'eng-4',
+    name: 'Engr. Emeka Nwosu',
+    specialty: 'Dental Systems & Autoclave Sterilizers',
+    experience_years: 6,
+    phone: '+2348163334444',
+    email: 'emeka.nwosu@dentequip.ng',
+    state: 'Rivers',
+    city: 'Port Harcourt',
+    bio: 'Expert technician focusing on dental operatory systems, dental chair hydraulics, pneumatic systems, and tabletop/chamber autoclaves. Fast response for clinical emergencies inside the South-South region.',
+    avatar_url: 'https://images.unsplash.com/photo-1622253692010-333f2da6031d?w=300&auto=format&fit=crop&q=80',
+    verified_status: 'unverified',
+    average_rating: 4.2,
+    services_offered: ['Dental Chair Plumbing', 'Autoclave Gasket Replacement', 'Compressor Descaling'],
+    created_at: '2025-04-05T10:00:00Z'
+  }
+];
+
+export const INITIAL_ENGINEER_REVIEWS: EngineerReview[] = [
+  {
+    id: 'rev-1',
+    engineer_id: 'eng-1',
+    reviewer_id: 'usr-5',
+    reviewer_name: 'Dr. Fatima Alabi',
+    reviewer_business: 'Riverside Memorial Hospital',
+    rating: 5,
+    comment: 'Engr. Kelechi successfully repaired our high-frequency Mindray DC-70 ultrasound system. Another engineering company recommended replacing the entire motherboard, but Kelechi isolated a capacitor failure on the power board, saving us millions of Naira. Highly recommended!',
+    created_at: '2026-05-15T14:30:00Z'
+  },
+  {
+    id: 'rev-2',
+    engineer_id: 'eng-1',
+    reviewer_id: 'usr-1',
+    reviewer_name: 'Dr. Chidi Obi',
+    reviewer_business: 'MedLink Diagnostics Ltd',
+    rating: 4,
+    comment: 'Very professional. Calibrated our newly imported refurbished GE Logiq ultrasound. Precise measurement adjustments. Took slightly longer than scheduled, but quality of work was outstanding.',
+    created_at: '2026-05-20T10:15:00Z'
+  },
+  {
+    id: 'rev-3',
+    engineer_id: 'eng-2',
+    reviewer_id: 'usr-5',
+    reviewer_name: 'Matron Amara',
+    reviewer_business: 'Riverside Memorial Hospital',
+    rating: 4,
+    comment: 'Engr. Amina helped calibrate our hematology analyzers and certified our biosafety hoods. Outstanding documentation and she provided training for our laboratory techs.',
+    created_at: '2026-05-18T16:00:00Z'
+  },
+  {
+    id: 'rev-4',
+    engineer_id: 'eng-3',
+    reviewer_id: 'usr-3',
+    reviewer_name: 'Dr. Michael Ezema',
+    reviewer_business: 'Garki Specialists Group',
+    rating: 5,
+    comment: 'Absolute masterclass. Engr. Tunde successfully troubleshooted our ICU ventilators when we had oxygen blending pressure drops. His technical depth on anesthesia setups is second to none in West Africa.',
+    created_at: '2026-05-25T11:00:00Z'
+  }
+];
+
+export const INITIAL_OFFERS: Offer[] = [
+  {
+    id: 'off-1',
+    listing_id: 'list-2',
+    listing_title: 'GE Voluson E8 Expert Ultrasound Machine',
+    seller_id: 'sel-2',
+    buyer_id: 'usr-5',
+    buyer_name: 'Riverside Memorial Hospital',
+    buyer_contact: 'buyer@riversidememorial.org',
+    offer_amount: 17000000,
+    currency: 'NGN',
+    message: 'We are very interested in this refurbished GE Voluson E8. We would like to offer NGN 17,000,000 with immediate payment if you can include delivery to Rivers state.',
+    status: 'pending',
+    created_at: '2026-05-25T14:30:00Z'
+  },
+  {
+    id: 'off-2',
+    listing_id: 'list-3',
+    listing_title: 'Shimadzu MobileArt Evolution Portable X-Ray',
+    seller_id: 'sel-2',
+    buyer_id: 'usr-1',
+    buyer_name: 'MedLink Diagnostics Ltd',
+    buyer_contact: '+2348031234567',
+    offer_amount: 10000000,
+    currency: 'NGN',
+    message: 'Offering NGN 10,000,000. We can pick it up ourselves from your Abuja depot.',
+    status: 'accepted',
+    created_at: '2026-05-26T10:15:00Z'
+  }
+];
+
+

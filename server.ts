@@ -7,8 +7,8 @@ import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
-import { NIGERIAN_STATES, CATEGORIES, INITIAL_SELLERS, INITIAL_LISTINGS, INITIAL_PROCUREMENT_REQUESTS } from "./src/data";
-import { Listing, Seller, Category, ProcurementRequest, ProcurementResponse, Report, VerificationRequest, FirestoreNotification, Lead, ChatMessage } from "./src/types";
+import { NIGERIAN_STATES, CATEGORIES, INITIAL_SELLERS, INITIAL_LISTINGS, INITIAL_PROCUREMENT_REQUESTS, INITIAL_ENGINEERS, INITIAL_ENGINEER_REVIEWS, INITIAL_OFFERS } from "./src/data";
+import { Listing, Seller, Category, ProcurementRequest, ProcurementResponse, Report, VerificationRequest, FirestoreNotification, Lead, ChatMessage, Engineer, EngineerReview, Offer } from "./src/types";
 
 const app = express();
 const PORT = 3000;
@@ -57,6 +57,9 @@ let procurementResponsesCollection: ProcurementResponse[] = [
 let favoritesCollection: { id: string; user_id: string; listing_id: string; created_at: string }[] = [];
 let reportsCollection: Report[] = [];
 let verificationRequestsCollection: VerificationRequest[] = [];
+let engineersCollection: Engineer[] = [...INITIAL_ENGINEERS];
+let engineerReviewsCollection: EngineerReview[] = [...INITIAL_ENGINEER_REVIEWS];
+let offersCollection: Offer[] = [...INITIAL_OFFERS];
 
 // Sourcing analytics to capture hospital search demands and patterns for administrators context
 let searchLogsCollection = [
@@ -295,7 +298,7 @@ app.get("/api/listings/:slugOrId", (req, res) => {
 
 // Listings: Create Listing
 app.post("/api/listings", (req, res) => {
-  const { seller_id, category_id, title, brand, model, condition, price, currency, negotiable, state, city, description, is_ai_extracted } = req.body;
+  const { seller_id, category_id, title, brand, model, condition, price, currency, negotiable, state, city, description, is_ai_extracted, listing_type } = req.body;
 
   if (!title || !price || !category_id) {
     return res.status(400).json({ error: "Required fields missing (title, price, category_id)" });
@@ -312,7 +315,7 @@ app.post("/api/listings", (req, res) => {
     slug,
     brand: brand || 'Generic',
     model: model || '',
-    condition: condition || 'used',
+    condition: condition === 'used' ? 'working_used' : (condition || 'working_used'),
     price: Number(price),
     currency: currency || 'NGN',
     negotiable: negotiable ?? true,
@@ -332,6 +335,7 @@ app.post("/api/listings", (req, res) => {
     seller_whatsapp: seller.whatsapp_number,
     seller_verified: seller.verification_status === 'verified',
     is_ai_extracted: !!is_ai_extracted,
+    listing_type: listing_type || 'fixed',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
   };
@@ -1076,6 +1080,187 @@ app.post("/api/leads/inquire", (req, res) => {
   res.json({ success: true, lead, isNew });
 });
 
+// ==========================================
+// OFFERS MANAGEMENT API
+// ==========================================
+
+// GET all offers
+app.get("/api/offers", (req, res) => {
+  const { seller_id, buyer_id, listing_id } = req.query;
+  let filtered = offersCollection;
+  if (seller_id) {
+    filtered = filtered.filter(o => o.seller_id === seller_id);
+  }
+  if (buyer_id) {
+    filtered = filtered.filter(o => o.buyer_id === buyer_id);
+  }
+  if (listing_id) {
+    filtered = filtered.filter(o => o.listing_id === listing_id);
+  }
+  res.json(filtered);
+});
+
+// POST submit a new offer
+app.post("/api/offers", (req, res) => {
+  const { listing_id, buyer_id, buyer_name, buyer_contact, offer_amount, currency, message } = req.body;
+  
+  if (!listing_id || !buyer_name || !buyer_contact || !offer_amount) {
+    return res.status(400).json({ error: "Missing required offer fields" });
+  }
+  
+  const listing = listingsCollection.find(l => l.id === listing_id);
+  if (!listing) {
+    return res.status(404).json({ error: "Listing not found" });
+  }
+  
+  const seller = sellersCollection.find(s => s.id === listing.seller_id);
+  if (!seller) {
+    return res.status(404).json({ error: "Seller not found" });
+  }
+  
+  const newOffer: Offer = {
+    id: `off-${Date.now()}`,
+    listing_id,
+    listing_title: listing.title,
+    seller_id: seller.id,
+    buyer_id: buyer_id || 'usr-5',
+    buyer_name,
+    buyer_contact,
+    offer_amount: Number(offer_amount),
+    currency: currency || listing.currency || 'NGN',
+    message: message || '',
+    status: 'pending',
+    created_at: new Date().toISOString()
+  };
+  
+  offersCollection.unshift(newOffer);
+  logActivity(buyer_name, 'MAKE_OFFER', 'Marketplace', `Submitted offer of ${newOffer.currency} ${Number(offer_amount).toLocaleString()} on ${listing.title}`);
+  
+  // Find or create associated Lead
+  let lead = leadsCollection.find(l => l.seller_id === seller.id && l.buyer_id === newOffer.buyer_id && l.source_id === listing_id);
+  let isNew = false;
+  
+  if (!lead) {
+    isNew = true;
+    lead = {
+      id: `lead-${Date.now()}`,
+      seller_id: seller.id,
+      buyer_id: newOffer.buyer_id || 'usr-5',
+      buyer_name: buyer_name,
+      buyer_contact: buyer_contact,
+      title: `${listing.title} Offer`,
+      type: 'listing_inquiry',
+      source_id: listing_id,
+      status: 'new',
+      notes: `Offer submitted: ${newOffer.currency} ${Number(offer_amount).toLocaleString()} on item "${listing.title}". Listed price: ${listing.currency} ${listing.price.toLocaleString()}`,
+      price_offered: Number(offer_amount),
+      last_activity_at: new Date().toISOString(),
+      created_at: new Date().toISOString()
+    };
+    leadsCollection.unshift(lead);
+  } else {
+    lead.status = 'quote_sent';
+    lead.price_offered = Number(offer_amount);
+    lead.notes = `New Offer submitted: ${newOffer.currency} ${Number(offer_amount).toLocaleString()}. ` + (lead.notes || '');
+    lead.last_activity_at = new Date().toISOString();
+  }
+  
+  // Post Offer message to Chat thread
+  const chatMsg: ChatMessage = {
+    id: `msg-${Date.now()}`,
+    lead_id: lead.id,
+    sender_id: newOffer.buyer_id || 'usr-5',
+    sender_name: `${buyer_name} (Buyer Offer)`,
+    message: `📢 [OFFER SUBMITTED] I have placed an offer of *${newOffer.currency} ${Number(offer_amount).toLocaleString()}* on this listing. ${message ? `Message: "${message}"` : ''}`,
+    created_at: new Date().toISOString()
+  };
+  chatMessagesCollection.push(chatMsg);
+  
+  // Notify Seller
+  notificationsCollection.unshift({
+    id: `notif-${Date.now()}-off`,
+    user_id: seller.user_id || 'usr-1',
+    type: 'offer_received',
+    title: 'New Offer Received!',
+    message: `${buyer_name} offered ${newOffer.currency} ${Number(offer_amount).toLocaleString()} for ${listing.title}`,
+    read: false,
+    created_at: new Date().toISOString()
+  });
+  
+  res.status(201).json({ success: true, offer: newOffer, lead, isNew });
+});
+
+// PATCH update offer status
+app.patch("/api/offers/:id", (req, res) => {
+  const { id } = req.params;
+  const { status, counter_amount } = req.body;
+  
+  const offer = offersCollection.find(o => o.id === id);
+  if (!offer) {
+    return res.status(404).json({ error: "Offer not found" });
+  }
+  
+  if (status) {
+    offer.status = status;
+  }
+  if (counter_amount !== undefined) {
+    offer.counter_amount = Number(counter_amount);
+  }
+  
+  logActivity('System', 'UPDATE_OFFER', 'Marketplace', `Offer ${id} updated to ${status}`);
+  
+  const lead = leadsCollection.find(l => l.seller_id === offer.seller_id && l.buyer_id === offer.buyer_id && l.source_id === offer.listing_id);
+  if (lead) {
+    lead.last_activity_at = new Date().toISOString();
+    
+    let senderId = 'system';
+    let senderName = 'System';
+    const sellerObj = sellersCollection.find(s => s.id === offer.seller_id);
+    
+    if (sellerObj) {
+      senderId = sellerObj.user_id || 'usr-1';
+      senderName = `${sellerObj.business_name} (Vendor)`;
+    }
+    
+    let msgContent = '';
+    if (status === 'accepted') {
+      lead.status = 'won';
+      msgContent = `✅ [OFFER ACCEPTED] The seller has accepted your offer of *${offer.currency} ${offer.offer_amount.toLocaleString()}*! Let's discuss delivery terms and invoice payment.`;
+    } else if (status === 'declined') {
+      lead.status = 'lost';
+      msgContent = `❌ [OFFER DECLINED] The seller declined your offer of *${offer.currency} ${offer.offer_amount.toLocaleString()}*.`;
+    } else if (status === 'countered') {
+      lead.status = 'discussion';
+      lead.price_offered = Number(counter_amount);
+      msgContent = `🔄 [COUNTER OFFER] The seller proposed a counter-offer of *${offer.currency} ${Number(counter_amount).toLocaleString()}*. Let's discuss if this fits your hospital budget.`;
+    }
+    
+    if (msgContent) {
+      chatMessagesCollection.push({
+        id: `msg-${Date.now()}-offer-status`,
+        lead_id: lead.id,
+        sender_id: senderId,
+        sender_name: senderName,
+        message: msgContent,
+        created_at: new Date().toISOString()
+      });
+      
+      // Notify Buyer
+      notificationsCollection.unshift({
+        id: `notif-${Date.now()}-off-upd`,
+        user_id: offer.buyer_id || 'usr-5',
+        type: 'offer_updated',
+        title: `Offer Update: ${offer.listing_title}`,
+        message: `Your offer status was updated to: ${status}${status === 'countered' ? ` (Countered to ${offer.currency} ${Number(counter_amount).toLocaleString()})` : ''}`,
+        read: false,
+        created_at: new Date().toISOString()
+      });
+    }
+  }
+  
+  res.json(offer);
+});
+
 // GET user notifications
 app.get("/api/notifications", (req, res) => {
   const { user_id } = req.query;
@@ -1226,7 +1411,7 @@ Analyze raw hospital trading text and return a beautifully structured JSON with 
    "Ultrasound Machines", "X-Ray Equipment", "CT & MRI Accessories", "Laboratory Equipment", "Theatre Equipment", "ICU Equipment", "Patient Monitors", "Hospital Beds & Furniture", "PPE & Consumables", "Syringes & Needles", "Gloves", "Infusion Pumps", "Autoclaves & Sterilizers", "Dental Equipment".
 3. brand: Manufacturer (e.g. Mindray, GE Healthcare, Tuttnauer, Sonoscape, Shimadzu). If not specified, set to "Generic" or empty.
 4. model: Product model ID.
-5. condition: Must be strictly "new", "used", or "refurbished". (Decide based on semantic tags like 'clean', 'spotless', 'fresh', 'tear rubber', ' carton standard').
+5. condition: Must be strictly "new", "refurbished", "working_used", "faulty", "parts_only", or "scrap". (Decide based on semantic tags: 'new'/'tear rubber'/'unused' -> "new", 'refurbished' -> "refurbished", 'faulty'/'defect'/'not working' -> "faulty", 'parts'/'for parts' -> "parts_only", 'scrap'/'salvage' -> "scrap", otherwise -> "working_used").
 6. price: The estimated total price as a pure number.
 7. currency: NGN (Nigerian Naira) or USD (US Dollar). (Naira might be labeled as "₦", "NGN", "M" for million Naira).
 8. location_state: Match location to a standard Nigerian state.
@@ -1405,7 +1590,9 @@ app.get("/api/diagnostics/schema", (req, res) => {
       users_count: usersCollection.length,
       reports_count: reportsCollection.length,
       verification_requests: verificationRequestsCollection.length,
-      audit_logs_count: activityLogsCollection.length
+      audit_logs_count: activityLogsCollection.length,
+      engineers_count: engineersCollection.length,
+      reviews_count: engineerReviewsCollection.length
     },
     tables: {
       users: usersCollection,
@@ -1414,9 +1601,114 @@ app.get("/api/diagnostics/schema", (req, res) => {
       listings: listingsCollection.map(l => ({ id: l.id, title: l.title, status: l.status, price: l.price, state: l.state })),
       reports: reportsCollection,
       verification_requests: verificationRequestsCollection,
-      audit_logs: activityLogsCollection
+      audit_logs: activityLogsCollection,
+      engineers: engineersCollection,
+      reviews: engineerReviewsCollection
     }
   });
+});
+
+// ==========================================
+// CLINICAL BIOMEDICAL ENGINEERS & SERVICES API
+// ==========================================
+
+// GET /api/engineers - Retrieve list of engineers with search & filters
+app.get("/api/engineers", (req, res) => {
+  let filtered = [...engineersCollection];
+  const { specialty, state, query } = req.query;
+
+  if (specialty) {
+    filtered = filtered.filter(e => e.specialty.toLowerCase().includes((specialty as string).toLowerCase()));
+  }
+  if (state) {
+    filtered = filtered.filter(e => e.state.toLowerCase() === (state as string).toLowerCase());
+  }
+  if (query) {
+    const sQuery = (query as string).toLowerCase();
+    filtered = filtered.filter(e => 
+      e.name.toLowerCase().includes(sQuery) || 
+      e.specialty.toLowerCase().includes(sQuery) ||
+      e.bio.toLowerCase().includes(sQuery) ||
+      e.services_offered.some(s => s.toLowerCase().includes(sQuery))
+    );
+  }
+
+  res.json(filtered);
+});
+
+// GET /api/engineers/:id/reviews - Retrieve reviews for an engineer
+app.get("/api/engineers/:id/reviews", (req, res) => {
+  const engineerId = req.params.id;
+  const reviews = engineerReviewsCollection.filter(r => r.engineer_id === engineerId);
+  res.json(reviews);
+});
+
+// POST /api/engineers/:id/reviews - Submit a review for an engineer
+app.post("/api/engineers/:id/reviews", (req, res) => {
+  const engineerId = req.params.id;
+  const { reviewer_id, reviewer_name, reviewer_business, rating, comment } = req.body;
+
+  if (!reviewer_name || !rating || !comment) {
+    return res.status(400).json({ error: "Reviewer name, rating, and comment are required." });
+  }
+
+  const newReview: EngineerReview = {
+    id: `rev-${Date.now()}`,
+    engineer_id: engineerId,
+    reviewer_id: reviewer_id || `usr-anonymous-${Date.now()}`,
+    reviewer_name,
+    reviewer_business: reviewer_business || "Clinical Practitioner",
+    rating: Number(rating),
+    comment,
+    created_at: new Date().toISOString()
+  };
+
+  engineerReviewsCollection.unshift(newReview);
+
+  // Recalculate average rating for the engineer
+  const engReviews = engineerReviewsCollection.filter(r => r.engineer_id === engineerId);
+  const totalRating = engReviews.reduce((sum, r) => sum + r.rating, 0);
+  const average = totalRating / engReviews.length;
+
+  const engineer = engineersCollection.find(e => e.id === engineerId);
+  if (engineer) {
+    engineer.average_rating = parseFloat(average.toFixed(1));
+  }
+
+  logActivity(reviewer_name, 'SUBMIT_REVIEW', 'Engineer', `Submitted a ${rating}-star review for engineer ${engineer?.name || engineerId}`);
+
+  res.status(201).json(newReview);
+});
+
+// POST /api/engineers - Create/Register an engineer profile
+app.post("/api/engineers", (req, res) => {
+  const { name, specialty, experience_years, phone, email, state, city, bio, services_offered, avatar_url } = req.body;
+
+  if (!name || !specialty || !phone || !email || !state || !city || !bio) {
+    return res.status(400).json({ error: "Required fields are missing: name, specialty, phone, email, state, city, bio." });
+  }
+
+  const newEngineer: Engineer = {
+    id: `eng-${Date.now()}`,
+    name,
+    specialty,
+    experience_years: Number(experience_years) || 1,
+    phone,
+    email,
+    state,
+    city,
+    bio,
+    avatar_url: avatar_url || 'https://images.unsplash.com/photo-1537368910025-700350fe46c7?w=300&auto=format&fit=crop&q=80',
+    verified_status: 'unverified',
+    average_rating: 0,
+    services_offered: Array.isArray(services_offered) ? services_offered : [],
+    created_at: new Date().toISOString()
+  };
+
+  engineersCollection.unshift(newEngineer);
+  logActivity(name, 'REGISTER_ENGINEER', 'Engineer', `Created a new medical engineer profile: ${name}`);
+
+  res.status(201).json(newEngineer);
 });
 
 // ==========================================

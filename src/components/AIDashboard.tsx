@@ -49,7 +49,22 @@ export default function AIDashboard({ onListingPublished, sellerId }: AIDashboar
   const [category, setCategory] = useState('cat-8');
   const [description, setDescription] = useState('');
   const [state, setState] = useState('Lagos');
-  const [condition, setCondition] = useState('used');
+  const [condition, setCondition] = useState<'new' | 'refurbished' | 'working_used' | 'used' | 'faulty' | 'parts_only' | 'scrap'>('working_used');
+  const [listingType, setListingType] = useState<'fixed' | 'make_offer' | 'auction_parts_faulty' | 'scrap_salvage' | 'auction_only'>('make_offer');
+
+  const handleConditionChange = (newCond: 'new' | 'refurbished' | 'working_used' | 'used' | 'faulty' | 'parts_only' | 'scrap') => {
+    setCondition(newCond);
+    // Automatically suggest sales method based on condition
+    if (newCond === 'new' || newCond === 'refurbished') {
+      setListingType('fixed');
+    } else if (newCond === 'working_used' || newCond === 'used') {
+      setListingType('make_offer');
+    } else if (newCond === 'faulty' || newCond === 'parts_only') {
+      setListingType('auction_parts_faulty');
+    } else if (newCond === 'scrap') {
+      setListingType('scrap_salvage');
+    }
+  };
 
   const handleSelectSample = (text: string) => {
     setInputText(text);
@@ -90,7 +105,23 @@ export default function AIDashboard({ onListingPublished, sellerId }: AIDashboar
       setPrice(data.price ? data.price.toString() : '0');
       setDescription(data.description || '');
       setState(data.location_state || 'Lagos');
-      setCondition(data.condition?.toLowerCase().includes('new') ? 'new' : data.condition?.toLowerCase().includes('refurbished') ? 'refurbished' : 'used');
+      
+      const rawCondition = (data.condition || '').toLowerCase();
+      let detectedCondition: 'new' | 'refurbished' | 'working_used' | 'faulty' | 'parts_only' | 'scrap' = 'working_used';
+      if (rawCondition.includes('new')) {
+        detectedCondition = 'new';
+      } else if (rawCondition.includes('refurbished')) {
+        detectedCondition = 'refurbished';
+      } else if (rawCondition.includes('scrap') || rawCondition.includes('salvage')) {
+        detectedCondition = 'scrap';
+      } else if (rawCondition.includes('parts')) {
+        detectedCondition = 'parts_only';
+      } else if (rawCondition.includes('faulty') || rawCondition.includes('defect') || rawCondition.includes('broken')) {
+        detectedCondition = 'faulty';
+      } else {
+        detectedCondition = 'working_used';
+      }
+      handleConditionChange(detectedCondition);
 
       // Detect standard category recommended
       handleAutoClassify(data.title);
@@ -183,7 +214,8 @@ export default function AIDashboard({ onListingPublished, sellerId }: AIDashboar
           state,
           city: extractedData?.location_city || 'City Center',
           description,
-          is_ai_extracted: true
+          is_ai_extracted: true,
+          listing_type: listingType
         })
       });
 
@@ -386,12 +418,15 @@ export default function AIDashboard({ onListingPublished, sellerId }: AIDashboar
                 </label>
                 <select
                   value={condition}
-                  onChange={(e) => setCondition(e.target.value)}
+                  onChange={(e) => handleConditionChange(e.target.value as any)}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-800 font-medium focus:outline-none"
                 >
-                  <option value="new">Brand New (Tear Rubber)</option>
+                  <option value="new">New (Brand New / Unused)</option>
                   <option value="refurbished">Refurbished Standard</option>
-                  <option value="used">Used / Foreign Used</option>
+                  <option value="working_used">Working Used</option>
+                  <option value="faulty">Faulty (Needs repair/calibration)</option>
+                  <option value="parts_only">For Parts Only</option>
+                  <option value="scrap">Scrap (Salvage value only)</option>
                 </select>
               </div>
 
@@ -422,6 +457,149 @@ export default function AIDashboard({ onListingPublished, sellerId }: AIDashboar
                   value={extractedData.seller_phone || 'None found'}
                   className="w-full bg-slate-100 border border-slate-200 rounded-xl p-3 text-xs text-slate-500 font-mono"
                 />
+              </div>
+            </div>
+
+            {/* LISTING TYPE SELECTOR (Expanded to 5 Sales Methods) */}
+            <div className="bg-slate-50 border border-slate-150 rounded-2xl p-4.5 space-y-3">
+              <div>
+                <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider block">
+                  Select Equipment Listing Agreement Type
+                </h4>
+                <p className="text-slate-400 text-[10.5px] mt-0.5">
+                  Choose how prospective clinical buyers negotiating with your store can transact. Based on condition, we suggest the optimal commercial method.
+                </p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                {/* 1. Fixed Price */}
+                <button
+                  type="button"
+                  onClick={() => setListingType('fixed')}
+                  className={`p-4 rounded-xl border text-left transition-all flex flex-col justify-between cursor-pointer relative overflow-hidden ${
+                    listingType === 'fixed'
+                      ? 'border-indigo-600 bg-indigo-50/40 ring-1 ring-indigo-600 shadow-xs'
+                      : 'border-slate-200 bg-white hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="flex items-center justify-between w-full">
+                    <span className={`text-xs font-bold ${listingType === 'fixed' ? 'text-indigo-650' : 'text-slate-700'}`}>
+                      ◉ Fixed Price
+                    </span>
+                    {listingType === 'fixed' && <span className="text-[9px] bg-indigo-600 text-white font-extrabold px-1.5 py-0.5 rounded">Active</span>}
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1.5 leading-normal font-medium mb-3">
+                    Buyers buy at the exact listed retail rate. Best for standard consumables or generic machinery.
+                  </p>
+                  {(condition === 'new' || condition === 'refurbished' || condition === 'working_used' || condition === 'used') && (
+                    <div className="text-[9.5px] bg-amber-50 border border-amber-250 text-amber-800 font-extrabold px-2 py-0.5 rounded-md self-start">
+                      ★ Recommended for {condition === 'new' ? 'New' : condition === 'refurbished' ? 'Refurbished' : 'Working Used'}
+                    </div>
+                  )}
+                </button>
+
+                {/* 2. Make Offer */}
+                <button
+                  type="button"
+                  onClick={() => setListingType('make_offer')}
+                  className={`p-4 rounded-xl border text-left transition-all flex flex-col justify-between cursor-pointer relative overflow-hidden ${
+                    listingType === 'make_offer'
+                      ? 'border-indigo-600 bg-indigo-50/40 ring-1 ring-indigo-600 shadow-xs'
+                      : 'border-slate-200 bg-white hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="flex items-center justify-between w-full">
+                    <span className={`text-xs font-bold ${listingType === 'make_offer' ? 'text-indigo-650' : 'text-slate-700'}`}>
+                      ◉ Make Offer
+                    </span>
+                    {listingType === 'make_offer' && <span className="text-[9px] bg-indigo-600 text-white font-extrabold px-1.5 py-0.5 rounded">Active</span>}
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1.5 leading-normal font-medium mb-3">
+                    Enables negotiations. Clinicians submit offers according to their exact healthcare facility budget.
+                  </p>
+                  {(condition === 'working_used' || condition === 'used') && (
+                    <div className="text-[9.5px] bg-amber-50 border border-amber-250 text-amber-800 font-extrabold px-2 py-0.5 rounded-md self-start">
+                      ★ Recommended for Working Used
+                    </div>
+                  )}
+                </button>
+
+                {/* 3. Auction: For Parts / Faulty */}
+                <button
+                  type="button"
+                  onClick={() => setListingType('auction_parts_faulty')}
+                  className={`p-4 rounded-xl border text-left transition-all flex flex-col justify-between cursor-pointer relative overflow-hidden ${
+                    listingType === 'auction_parts_faulty'
+                      ? 'border-indigo-600 bg-indigo-50/40 ring-1 ring-indigo-600 shadow-xs'
+                      : 'border-slate-200 bg-white hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="flex items-center justify-between w-full">
+                    <span className={`text-xs font-bold ${listingType === 'auction_parts_faulty' ? 'text-indigo-650' : 'text-slate-700'}`}>
+                      ◉ For Parts / Faulty
+                    </span>
+                    {listingType === 'auction_parts_faulty' && <span className="text-[9px] bg-indigo-600 text-white font-extrabold px-1.5 py-0.5 rounded">Active</span>}
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1.5 leading-normal font-medium mb-3">
+                    Auction system for non-functional/untested devices. Buyers bid to salvage specific diagnostic subcomponents.
+                  </p>
+                  {(condition === 'faulty' || condition === 'parts_only') && (
+                    <div className="text-[9.5px] bg-amber-50 border border-amber-250 text-amber-800 font-extrabold px-2 py-0.5 rounded-md self-start">
+                      ★ Recommended for {condition === 'faulty' ? 'Faulty' : 'Parts Only'}
+                    </div>
+                  )}
+                </button>
+
+                {/* 4. Scrap / Salvage */}
+                <button
+                  type="button"
+                  onClick={() => setListingType('scrap_salvage')}
+                  className={`p-4 rounded-xl border text-left transition-all flex flex-col justify-between cursor-pointer relative overflow-hidden ${
+                    listingType === 'scrap_salvage'
+                      ? 'border-indigo-600 bg-indigo-50/40 ring-1 ring-indigo-600 shadow-xs'
+                      : 'border-slate-200 bg-white hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="flex items-center justify-between w-full">
+                    <span className={`text-xs font-bold ${listingType === 'scrap_salvage' ? 'text-indigo-650' : 'text-slate-700'}`}>
+                      ◉ Scrap / Salvage
+                    </span>
+                    {listingType === 'scrap_salvage' && <span className="text-[9px] bg-indigo-600 text-white font-extrabold px-1.5 py-0.5 rounded">Active</span>}
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1.5 leading-normal font-medium mb-3">
+                    Immediate liquidation or bidding on decommissioned metal/materials. Stated solely for baseline pricing.
+                  </p>
+                  {condition === 'scrap' && (
+                    <div className="text-[9.5px] bg-amber-50 border border-amber-250 text-amber-800 font-extrabold px-2 py-0.5 rounded-md self-start">
+                      ★ Recommended for Scrap
+                    </div>
+                  )}
+                </button>
+
+                {/* 5. Auction Only */}
+                <button
+                  type="button"
+                  onClick={() => setListingType('auction_only')}
+                  className={`p-4 rounded-xl border text-left transition-all flex flex-col justify-between cursor-pointer relative overflow-hidden ${
+                    listingType === 'auction_only'
+                      ? 'border-indigo-600 bg-indigo-50/40 ring-1 ring-indigo-600 shadow-xs'
+                      : 'border-slate-200 bg-white hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="flex items-center justify-between w-full">
+                    <span className={`text-xs font-bold ${listingType === 'auction_only' ? 'text-indigo-650' : 'text-slate-700'}`}>
+                      ◉ Auction Only
+                    </span>
+                    {listingType === 'auction_only' && <span className="text-[9px] bg-indigo-600 text-white font-extrabold px-1.5 py-0.5 rounded">Active</span>}
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1.5 leading-normal font-medium mb-3">
+                    General medical asset bidding channel. Set opening bid price and clear bidding expiration window.
+                  </p>
+                  {(condition === 'faulty' || condition === 'parts_only' || condition === 'scrap') && (
+                    <div className="text-[9.5px] bg-amber-50 border border-amber-250 text-amber-800 font-extrabold px-2 py-0.5 rounded-md self-start">
+                      ★ Recommended for Auction Only
+                    </div>
+                  )}
+                </button>
               </div>
             </div>
 
