@@ -15,6 +15,7 @@ export interface User {
   phone: string;
   role: UserRole;
   status: 'active' | 'suspended';
+  profile_image_url?: string;
   created_at: string;
   updated_at: string;
 }
@@ -35,6 +36,7 @@ export interface Seller {
   active_listings_count: number;
   rating_placeholder: number;
   cac_number?: string;
+  status?: 'active' | 'suspended';
   created_at: string;
 }
 
@@ -55,7 +57,7 @@ export interface Listing {
   slug: string;
   brand: string;
   model: string;
-  condition: 'new' | 'refurbished' | 'working_used' | 'used' | 'faulty' | 'parts_only' | 'scrap';
+  condition: 'new' | 'refurbished' | 'foreign_used' | 'local_used' | 'working_used' | 'used' | 'faulty' | 'parts_only' | 'scrap';
   price: number;
   currency: 'NGN' | 'USD';
   negotiable: boolean;
@@ -68,7 +70,10 @@ export interface Listing {
   stock_status: 'in_stock' | 'out_of_stock' | 'on_demand';
   view_count: number;
   whatsapp_click_count: number;
+  phone_click_count?: number;
   images: string[];
+  videos?: string[];
+  links?: string[];
   seller_name?: string;
   seller_whatsapp?: string;
   seller_verified?: boolean;
@@ -270,4 +275,170 @@ export interface EngineerReview {
   comment: string;
   created_at: string;
 }
+
+export type EscrowStatus = 'initiated' | 'funds_deposited' | 'equipment_dispatched' | 'inspected_approved' | 'funds_released' | 'disputed' | 'refunded';
+
+export interface EscrowDeal {
+  id: string;
+  listing_id: string;
+  listing_title: string;
+  buyer_id: string;
+  buyer_name: string;
+  buyer_email: string;
+  seller_id: string;
+  seller_name: string;
+  amount: number;
+  currency: string;
+  escrow_fee: number;
+  status: EscrowStatus;
+  assigned_engineer_id?: string;
+  assigned_engineer_name?: string;
+  engineer_notes?: string;
+  engineer_approved?: boolean;
+  payment_reference?: string;
+  delivery_tracking_no?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export type FinancingStatus = 'submitted' | 'under_review' | 'pre_approved' | 'approved' | 'disbursed' | 'rejected';
+
+export interface LeaseFinancingApplication {
+  id: string;
+  buyer_id: string;
+  hospital_name: string;
+  contact_email: string;
+  contact_phone: string;
+  equipment_id: string;
+  equipment_title: string;
+  equipment_price: number;
+  down_payment: number;
+  financed_amount: number;
+  tenure_months: number;
+  monthly_repayment: number;
+  partner_bank_id: string;
+  partner_bank_name: string;
+  cac_registration: string;
+  medical_license: string;
+  monthly_patient_volume: number;
+  status: FinancingStatus;
+  approval_notes?: string;
+  created_at: string;
+}
+
+export interface FinancingPartner {
+  id: string;
+  name: string;
+  logo_url: string;
+  interest_rate_annual: number;
+  max_tenure_months: number;
+  min_down_payment_pct: number;
+  description: string;
+  badge: string;
+}
+
+export type InspectionStatus = 'pending_assignment' | 'scheduled' | 'in_progress' | 'passed' | 'failed_with_defects' | 'canceled';
+
+export interface InspectionChecklistItem {
+  id: string;
+  label: string;
+  category: 'sensor_calibration' | 'tube_head_voltage' | 'power_surge' | 'accessories' | 'safety';
+  status: 'pending' | 'pass' | 'fail' | 'na';
+  measured_value?: string;
+  notes?: string;
+}
+
+export interface InspectionRequest {
+  id: string;
+  listing_id: string;
+  listing_title: string;
+  listing_condition: string;
+  listing_price: number;
+  listing_currency: string;
+  seller_id: string;
+  seller_name: string;
+  buyer_id: string;
+  buyer_name: string;
+  buyer_phone: string;
+  buyer_email: string;
+  hospital_name: string;
+  assigned_engineer_id: string;
+  assigned_engineer_name: string;
+  assigned_engineer_phone: string;
+  inspection_location: string;
+  scheduled_date: string;
+  status: InspectionStatus;
+  notes?: string;
+  fee_amount: number;
+  escrow_linked?: boolean;
+  escrow_deal_id?: string;
+  checklist: InspectionChecklistItem[];
+  certificate_no?: string;
+  engineer_verdict_notes?: string;
+  completed_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export type EquipmentLogisticsCategory = 
+  | 'xray_ct_mri' 
+  | 'ultrasound_echocardiogram' 
+  | 'icu_beds_tables' 
+  | 'lab_analyzers_coldchain' 
+  | 'standard_clinical';
+
+export interface LogisticsEstimateRequest {
+  origin_state: string;
+  origin_city?: string;
+  destination_state: string;
+  destination_city?: string;
+  equipment_category: EquipmentLogisticsCategory;
+  equipment_title?: string;
+  equipment_value_ngn: number;
+  weight_kg?: number;
+  require_rigger_crane?: boolean;
+  require_transit_insurance?: boolean;
+  require_escort_vehicle?: boolean;
+  require_biomed_specialist?: boolean;
+  listing_id?: string;
+  buyer_id?: string;
+  buyer_name?: string;
+  hospital_name?: string;
+}
+
+export interface LogisticsQuoteBreakdown {
+  base_freight_ngn: number;
+  specialized_packaging_ngn: number;
+  distance_km: number;
+  estimated_transit_hours: number;
+  insurance_ngn: number;
+  rigger_crane_ngn: number;
+  escort_vehicle_ngn: number;
+  biomed_specialist_ngn: number;
+  waybill_tolls_ngn: number;
+  total_logistics_cost_ngn: number;
+  transit_type: string;
+  recommended_vehicle: string;
+  special_handling_notes: string[];
+}
+
+export interface LogisticsQuote extends LogisticsQuoteBreakdown {
+  id: string;
+  quote_number: string;
+  listing_id?: string;
+  listing_title?: string;
+  origin_state: string;
+  origin_city?: string;
+  destination_state: string;
+  destination_city?: string;
+  equipment_category: EquipmentLogisticsCategory;
+  equipment_value_ngn: number;
+  buyer_id?: string;
+  buyer_name?: string;
+  hospital_name?: string;
+  status: 'draft' | 'saved' | 'attached_to_checkout' | 'confirmed';
+  created_at: string;
+  expires_at: string;
+}
+
 

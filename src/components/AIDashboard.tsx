@@ -5,6 +5,7 @@
 
 import React, { useState } from 'react';
 import { Sparkles, MessageSquare, AlertCircle, RefreshCw, Send, CheckCircle, ShieldAlert, FileText, ArrowRight, Layers, HelpCircle } from 'lucide-react';
+import CustomSelect from './CustomSelect';
 
 const SAMPLE_WHATSAPP_MESSAGES = [
   {
@@ -28,9 +29,10 @@ const SAMPLE_WHATSAPP_MESSAGES = [
 interface AIDashboardProps {
   onListingPublished: () => void;
   sellerId: string;
+  currentUser?: any;
 }
 
-export default function AIDashboard({ onListingPublished, sellerId }: AIDashboardProps) {
+export default function AIDashboard({ onListingPublished, sellerId, currentUser }: AIDashboardProps) {
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
@@ -49,15 +51,15 @@ export default function AIDashboard({ onListingPublished, sellerId }: AIDashboar
   const [category, setCategory] = useState('cat-8');
   const [description, setDescription] = useState('');
   const [state, setState] = useState('Lagos');
-  const [condition, setCondition] = useState<'new' | 'refurbished' | 'working_used' | 'used' | 'faulty' | 'parts_only' | 'scrap'>('working_used');
+  const [condition, setCondition] = useState<'new' | 'refurbished' | 'foreign_used' | 'local_used' | 'working_used' | 'used' | 'faulty' | 'parts_only' | 'scrap'>('foreign_used');
   const [listingType, setListingType] = useState<'fixed' | 'make_offer' | 'auction_parts_faulty' | 'scrap_salvage' | 'auction_only'>('make_offer');
 
-  const handleConditionChange = (newCond: 'new' | 'refurbished' | 'working_used' | 'used' | 'faulty' | 'parts_only' | 'scrap') => {
+  const handleConditionChange = (newCond: 'new' | 'refurbished' | 'foreign_used' | 'local_used' | 'working_used' | 'used' | 'faulty' | 'parts_only' | 'scrap') => {
     setCondition(newCond);
     // Automatically suggest sales method based on condition
     if (newCond === 'new' || newCond === 'refurbished') {
       setListingType('fixed');
-    } else if (newCond === 'working_used' || newCond === 'used') {
+    } else if (newCond === 'foreign_used' || newCond === 'local_used' || newCond === 'working_used' || newCond === 'used') {
       setListingType('make_offer');
     } else if (newCond === 'faulty' || newCond === 'parts_only') {
       setListingType('auction_parts_faulty');
@@ -107,9 +109,13 @@ export default function AIDashboard({ onListingPublished, sellerId }: AIDashboar
       setState(data.location_state || 'Lagos');
       
       const rawCondition = (data.condition || '').toLowerCase();
-      let detectedCondition: 'new' | 'refurbished' | 'working_used' | 'faulty' | 'parts_only' | 'scrap' = 'working_used';
+      let detectedCondition: 'new' | 'refurbished' | 'foreign_used' | 'local_used' | 'working_used' | 'faulty' | 'parts_only' | 'scrap' = 'foreign_used';
       if (rawCondition.includes('new')) {
         detectedCondition = 'new';
+      } else if (rawCondition.includes('tokunbo') || rawCondition.includes('foreign') || rawCondition.includes('direct import') || rawCondition.includes('us') || rawCondition.includes('uk')) {
+        detectedCondition = 'foreign_used';
+      } else if (rawCondition.includes('local') || rawCondition.includes('nigerian')) {
+        detectedCondition = 'local_used';
       } else if (rawCondition.includes('refurbished')) {
         detectedCondition = 'refurbished';
       } else if (rawCondition.includes('scrap') || rawCondition.includes('salvage')) {
@@ -119,7 +125,7 @@ export default function AIDashboard({ onListingPublished, sellerId }: AIDashboar
       } else if (rawCondition.includes('faulty') || rawCondition.includes('defect') || rawCondition.includes('broken')) {
         detectedCondition = 'faulty';
       } else {
-        detectedCondition = 'working_used';
+        detectedCondition = 'foreign_used';
       }
       handleConditionChange(detectedCondition);
 
@@ -200,7 +206,10 @@ export default function AIDashboard({ onListingPublished, sellerId }: AIDashboar
     try {
       const res = await fetch('/api/listings', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${currentUser?.id || ''}`
+        },
         body: JSON.stringify({
           seller_id: sellerId,
           category_id: category,
@@ -384,20 +393,20 @@ export default function AIDashboard({ onListingPublished, sellerId }: AIDashboar
                 <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
                   Database Category Mapping
                 </label>
-                <select
+                <CustomSelect
                   value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-800 font-medium focus:outline-none"
-                >
-                  <option value="cat-8">Patient Monitors</option>
-                  <option value="cat-2">Ultrasound Machines</option>
-                  <option value="cat-3">X-Ray Equipment</option>
-                  <option value="cat-5">Laboratory Equipment</option>
-                  <option value="cat-9">Hospital Beds & Furniture</option>
-                  <option value="cat-11">Syringes & Needles</option>
-                  <option value="cat-12">Gloves</option>
-                  <option value="cat-14">Autoclaves</option>
-                </select>
+                  onChange={(val) => setCategory(val)}
+                  options={[
+                    { value: 'cat-8', label: 'Patient Monitors' },
+                    { value: 'cat-2', label: 'Ultrasound Machines' },
+                    { value: 'cat-3', label: 'X-Ray Equipment' },
+                    { value: 'cat-5', label: 'Laboratory Equipment' },
+                    { value: 'cat-9', label: 'Hospital Beds & Furniture' },
+                    { value: 'cat-11', label: 'Syringes & Needles' },
+                    { value: 'cat-12', label: 'Gloves' },
+                    { value: 'cat-14', label: 'Autoclaves' },
+                  ]}
+                />
               </div>
 
               <div>
@@ -416,35 +425,37 @@ export default function AIDashboard({ onListingPublished, sellerId }: AIDashboar
                 <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
                   Diagnosed Condition
                 </label>
-                <select
+                <CustomSelect
                   value={condition}
-                  onChange={(e) => handleConditionChange(e.target.value as any)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-800 font-medium focus:outline-none"
-                >
-                  <option value="new">New (Brand New / Unused)</option>
-                  <option value="refurbished">Refurbished Standard</option>
-                  <option value="working_used">Working Used</option>
-                  <option value="faulty">Faulty (Needs repair/calibration)</option>
-                  <option value="parts_only">For Parts Only</option>
-                  <option value="scrap">Scrap (Salvage value only)</option>
-                </select>
+                  onChange={(val) => handleConditionChange(val as any)}
+                  options={[
+                    { value: 'new', label: 'Brand New (Tear Rubber)' },
+                    { value: 'foreign_used', label: 'Foreign Used (Tokunbo / Direct Import)' },
+                    { value: 'local_used', label: 'Local Used (Nigerian Used)' },
+                    { value: 'refurbished', label: 'Refurbished Standard' },
+                    { value: 'working_used', label: 'Working Used / Pre-Owned' },
+                    { value: 'faulty', label: 'Faulty (Needs repair/calibration)' },
+                    { value: 'parts_only', label: 'For Parts Only' },
+                    { value: 'scrap', label: 'Scrap (Salvage value only)' },
+                  ]}
+                />
               </div>
 
               <div>
                 <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
                   State Location (Nigeria)
                 </label>
-                <select
+                <CustomSelect
                   value={state}
-                  onChange={(e) => setState(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-800 font-medium focus:outline-none"
-                >
-                  <option value="Lagos">Lagos State</option>
-                  <option value="Abuja (FCT)">Abuja FCT</option>
-                  <option value="Oyo">Oyo State (Ibadan)</option>
-                  <option value="Rivers">Rivers State (Port Harcourt)</option>
-                  <option value="Enugu">Enugu State</option>
-                </select>
+                  onChange={(val) => setState(val)}
+                  options={[
+                    { value: 'Lagos', label: 'Lagos State' },
+                    { value: 'Abuja (FCT)', label: 'Abuja FCT' },
+                    { value: 'Oyo', label: 'Oyo State (Ibadan)' },
+                    { value: 'Rivers', label: 'Rivers State (Port Harcourt)' },
+                    { value: 'Enugu', label: 'Enugu State' },
+                  ]}
+                />
               </div>
 
               <div>

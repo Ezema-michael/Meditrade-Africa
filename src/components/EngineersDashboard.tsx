@@ -15,11 +15,21 @@ import {
   FileText, 
   Sparkles, 
   TrendingUp, 
-  ShieldCheck 
+  ShieldCheck,
+  FileCheck,
+  AlertTriangle,
+  Calendar,
+  Lock,
+  Activity,
+  Zap,
+  Clock,
+  Check,
+  XCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Engineer, EngineerReview } from '../types';
+import { Engineer, EngineerReview, InspectionRequest, InspectionChecklistItem } from '../types';
 import { NIGERIAN_STATES } from '../data';
+import CustomSelect from './CustomSelect';
 
 interface EngineersDashboardProps {
   currentUser: any;
@@ -30,7 +40,7 @@ const SPECIALTIES = [
   'Ultrasound & Radiology Calibration',
   'Laboratory & Biosafety Maintenance',
   'ICU Ventilators & Anaesthetic Workstations',
-  'Dental Systems & Autoclave Sterilizers',
+  'Dental Systems & Autoclaves',
   'General Medical Equipment Maintenance'
 ];
 
@@ -38,10 +48,20 @@ export default function EngineersDashboard({ currentUser, onTriggerRegister }: E
   const [engineers, setEngineers] = useState<Engineer[]>([]);
   const [loadingEngineers, setLoadingEngineers] = useState(false);
   
+  // View mode
+  const [activeTab, setActiveTab] = useState<'directory' | 'audits'>('directory');
+  const [inspections, setInspections] = useState<InspectionRequest[]>([]);
+  const [loadingInspections, setLoadingInspections] = useState(false);
+  const [selectedAudit, setSelectedAudit] = useState<InspectionRequest | null>(null);
+  const [auditVerdictNotes, setAuditVerdictNotes] = useState('');
+  const [auditChecklistState, setAuditChecklistState] = useState<InspectionChecklistItem[]>([]);
+  const [submittingReport, setSubmittingReport] = useState(false);
+
   // Search & Filters state
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedState, setSelectedState] = useState('');
   const [selectedSpecialty, setSelectedSpecialty] = useState('');
+
 
   // Selected engineer for reviews modal
   const [selectedEngineer, setSelectedEngineer] = useState<Engineer | null>(null);
@@ -110,10 +130,63 @@ export default function EngineersDashboard({ currentUser, onTriggerRegister }: E
     }
   };
 
+  // Fetch pre-purchase inspection requests
+  const fetchInspections = async () => {
+    setLoadingInspections(true);
+    try {
+      const res = await fetch('/api/inspections');
+      if (res.ok) {
+        const data = await res.json();
+        setInspections(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch inspection requests:', err);
+    } finally {
+      setLoadingInspections(false);
+    }
+  };
+
   // Initial fetch
   useEffect(() => {
     fetchEngineers();
-  }, [searchQuery, selectedState, selectedSpecialty]);
+    fetchInspections();
+  }, [searchQuery, selectedState, selectedSpecialty, activeTab]);
+
+  const handleOpenAuditSignoff = (audit: InspectionRequest) => {
+    setSelectedAudit(audit);
+    setAuditVerdictNotes(audit.engineer_verdict_notes || '');
+    setAuditChecklistState(audit.checklist ? JSON.parse(JSON.stringify(audit.checklist)) : []);
+  };
+
+  const handleUpdateChecklistItem = (id: string, field: 'status' | 'measured_value' | 'notes', value: string) => {
+    setAuditChecklistState(prev => prev.map(item => item.id === id ? { ...item, [field]: value } : item));
+  };
+
+  const handleSubmitAuditReport = async (status: 'passed' | 'failed_with_defects') => {
+    if (!selectedAudit) return;
+    setSubmittingReport(true);
+    try {
+      const res = await fetch(`/api/inspections/${selectedAudit.id}/submit-report`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          checklist: auditChecklistState,
+          verdict_notes: auditVerdictNotes || (status === 'passed' ? 'Equipment passed full calibration testing.' : 'Defects found during testing.'),
+          status
+        })
+      });
+
+      if (res.ok) {
+        fetchInspections();
+        setSelectedAudit(null);
+      }
+    } catch (err) {
+      console.error('Failed to submit report:', err);
+    } finally {
+      setSubmittingReport(false);
+    }
+  };
+
 
   // Handle open reviews
   const handleViewReviews = (engineer: Engineer) => {
@@ -280,6 +353,39 @@ export default function EngineersDashboard({ currentUser, onTriggerRegister }: E
         </div>
       </div>
 
+      {/* NAVIGATION TAB STRIP */}
+      <div className="flex items-center gap-3 border-b border-slate-200 pb-2">
+        <button
+          onClick={() => { setActiveTab('directory'); setShowRegisterForm(false); }}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+            activeTab === 'directory'
+              ? 'bg-slate-900 text-white shadow-sm'
+              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+          }`}
+        >
+          <Wrench className="w-4 h-4 text-indigo-400" />
+          <span>Biomedical Engineers Directory ({engineers.length})</span>
+        </button>
+
+        <button
+          onClick={() => { setActiveTab('audits'); setShowRegisterForm(false); }}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+            activeTab === 'audits'
+              ? 'bg-cyan-900 text-white shadow-sm'
+              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+          }`}
+        >
+          <ShieldCheck className="w-4 h-4 text-cyan-400" />
+          <span>Pre-Purchase Engineering Audits</span>
+          {inspections.length > 0 && (
+            <span className="bg-cyan-500 text-white text-[10px] px-1.5 py-0.5 rounded-full font-mono">
+              {inspections.length}
+            </span>
+          )}
+        </button>
+      </div>
+
+
       <AnimatePresence mode="wait">
         {showRegisterForm ? (
           /* REGISTRATION FORM VIEW */
@@ -335,15 +441,11 @@ export default function EngineersDashboard({ currentUser, onTriggerRegister }: E
 
                     <div>
                       <label className="block text-xs font-bold text-slate-700 mb-1.5">Primary Engineering Specialty *</label>
-                      <select
+                      <CustomSelect
                         value={regSpecialty}
-                        onChange={(e) => setRegSpecialty(e.target.value)}
-                        className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-hidden focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-white"
-                      >
-                        {SPECIALTIES.map((spec) => (
-                          <option key={spec} value={spec}>{spec}</option>
-                        ))}
-                      </select>
+                        onChange={(val) => setRegSpecialty(val)}
+                        options={SPECIALTIES.map(spec => ({ value: spec, label: spec }))}
+                      />
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
@@ -402,15 +504,11 @@ export default function EngineersDashboard({ currentUser, onTriggerRegister }: E
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className="block text-xs font-bold text-slate-700 mb-1.5">State (Location) *</label>
-                        <select
+                        <CustomSelect
                           value={regState}
-                          onChange={(e) => setRegState(e.target.value)}
-                          className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-hidden focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-white"
-                        >
-                          {NIGERIAN_STATES.map((st) => (
-                            <option key={st} value={st}>{st}</option>
-                          ))}
-                        </select>
+                          onChange={(val) => setRegState(val)}
+                          options={NIGERIAN_STATES.map(st => ({ value: st, label: st }))}
+                        />
                       </div>
                       <div>
                         <label className="block text-xs font-bold text-slate-700 mb-1.5">City *</label>
@@ -480,6 +578,158 @@ export default function EngineersDashboard({ currentUser, onTriggerRegister }: E
               </form>
             )}
           </motion.div>
+        ) : activeTab === 'audits' ? (
+          /* PRE-PURCHASE ENGINEERING AUDITS PORTAL VIEW */
+          <motion.div
+            key="audits-view"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="space-y-6"
+          >
+            {/* AUDITS HEADER CARDS */}
+            <div className="bg-cyan-950 text-white rounded-3xl p-6 border border-cyan-800 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+              <div className="space-y-1 max-w-2xl">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="h-5 w-5 text-cyan-400" />
+                  <span className="text-xs font-mono font-bold text-cyan-300 uppercase tracking-widest">
+                    Tokunbo & Used Equipment Verification Protocol
+                  </span>
+                </div>
+                <h2 className="text-lg font-black text-white">Certified Pre-Purchase Engineering Audits</h2>
+                <p className="text-xs text-cyan-200/80 leading-relaxed">
+                  Before buyers release funds via Escrow, certified local biomedical engineers conduct on-site calibration testing for uncalibrated sensors, tube head voltages, and power surge protection.
+                </p>
+              </div>
+
+              <div className="bg-cyan-900/80 border border-cyan-700/60 rounded-2xl p-4 shrink-0 space-y-1 text-center font-mono">
+                <span className="text-[10px] text-cyan-300 uppercase block font-bold">Protocol Active Deals</span>
+                <span className="text-2xl font-black text-white">{inspections.length}</span>
+                <span className="text-[9.5px] text-emerald-400 block font-bold">100% Escrow Protected</span>
+              </div>
+            </div>
+
+            {/* AUDITS REQUEST GRID */}
+            {loadingInspections ? (
+              <div className="py-20 text-center space-y-3">
+                <div className="animate-spin inline-block h-8 w-8 border-4 border-cyan-500 border-t-transparent rounded-full" />
+                <p className="text-slate-500 text-xs font-bold">Loading engineering audit requests...</p>
+              </div>
+            ) : inspections.length === 0 ? (
+              <div className="bg-white rounded-3xl border border-dashed border-slate-200 p-12 text-center space-y-3">
+                <ShieldCheck className="h-10 w-10 text-slate-300 mx-auto" />
+                <h3 className="font-extrabold text-slate-800 text-sm">No Pending Audit Requests</h3>
+                <p className="text-xs text-slate-400 max-w-md mx-auto">
+                  When hospital buyers request pre-purchase inspections on Tokunbo or used equipment listings, requests will appear here for local engineers to conduct testing.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {inspections.map((audit) => {
+                  const passed = audit.status === 'passed';
+                  const failed = audit.status === 'failed_with_defects';
+
+                  return (
+                    <div
+                      key={audit.id}
+                      className="bg-white rounded-3xl border border-slate-150 p-6 shadow-xs hover:shadow-md transition-all space-y-4 flex flex-col justify-between"
+                    >
+                      {/* Top Header */}
+                      <div className="space-y-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <span className={`text-[10px] font-black uppercase px-2.5 py-1 rounded-md border flex items-center gap-1 ${
+                            passed
+                              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                              : failed
+                              ? 'bg-rose-50 text-rose-800 border-rose-200'
+                              : 'bg-amber-50 text-amber-800 border-amber-200 animate-pulse'
+                          }`}>
+                            {passed ? <CheckCircle2 className="h-3 w-3 text-emerald-600" /> : failed ? <XCircle className="h-3 w-3 text-rose-600" /> : <Clock className="h-3 w-3 text-amber-600" />}
+                            {audit.status.replace(/_/g, ' ')}
+                          </span>
+
+                          <span className="text-xs font-mono font-bold text-slate-500">
+                            Fee: ₦{(audit.fee_ngn || 65000).toLocaleString()}
+                          </span>
+                        </div>
+
+                        <h3 className="font-extrabold text-slate-900 text-base tracking-tight leading-snug">
+                          {audit.listing_title}
+                        </h3>
+
+                        <div className="flex items-center gap-2 text-xs text-slate-500">
+                          <MapPin className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                          <span>{audit.location_city}, {audit.location_state}</span>
+                        </div>
+                      </div>
+
+                      {/* Info Card */}
+                      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 space-y-2 text-xs">
+                        <div className="flex justify-between items-center text-slate-700 font-medium">
+                          <span className="text-slate-400">Buyer Facility:</span>
+                          <strong className="text-slate-900">{audit.buyer_name}</strong>
+                        </div>
+                        <div className="flex justify-between items-center text-slate-700 font-medium">
+                          <span className="text-slate-400">Assigned Engineer:</span>
+                          <strong className="text-indigo-600">{audit.engineer_name}</strong>
+                        </div>
+                        <div className="flex justify-between items-center text-slate-700 font-medium">
+                          <span className="text-slate-400">Escrow Link:</span>
+                          <span className="font-mono text-[11px] bg-slate-200 px-1.5 py-0.5 rounded text-slate-800 font-bold">
+                            {audit.escrow_id || 'Standalone Audit'}
+                          </span>
+                        </div>
+
+                        {audit.certificate_number && (
+                          <div className="mt-2 pt-2 border-t border-slate-200 flex items-center justify-between text-[11px] text-emerald-700 font-mono font-bold bg-emerald-50/50 p-2 rounded-xl">
+                            <span className="flex items-center gap-1">
+                              <FileCheck className="h-3.5 w-3.5 text-emerald-600" />
+                              <span>Cert: {audit.certificate_number}</span>
+                            </span>
+                            <span className="bg-emerald-600 text-white text-[9px] px-1.5 py-0.5 rounded">
+                              OFFICIAL
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Checklist Quick View */}
+                      <div className="space-y-1.5">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                          Calibration Checklist Protocol (5 Points)
+                        </span>
+                        <div className="grid grid-cols-1 gap-1">
+                          {audit.checklist?.slice(0, 3).map((item) => (
+                            <div key={item.id} className="flex items-center justify-between text-[11px] bg-white border border-slate-100 p-2 rounded-xl">
+                              <span className="text-slate-700 font-medium truncate max-w-[200px]">{item.title}</span>
+                              <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded ${
+                                item.status === 'pass'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : item.status === 'fail'
+                                  ? 'bg-rose-100 text-rose-800'
+                                  : 'bg-slate-100 text-slate-600'
+                              }`}>
+                                {item.status.toUpperCase()}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Action Button */}
+                      <button
+                        onClick={() => handleOpenAuditSignoff(audit)}
+                        className="w-full bg-slate-900 hover:bg-slate-800 text-white rounded-xl py-2.5 px-4 text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-2 shadow-xs"
+                      >
+                        <Wrench className="h-4 w-4 text-cyan-400" />
+                        <span>Run On-Site Calibration Signoff</span>
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </motion.div>
         ) : (
           /* BROWSE ENGINEERS DIRECTORY VIEW */
           <motion.div
@@ -489,6 +739,7 @@ export default function EngineersDashboard({ currentUser, onTriggerRegister }: E
             exit={{ opacity: 0 }}
             className="space-y-6"
           >
+
             {/* SEARCH AND FILTERS PANEL */}
             <div className="bg-white rounded-2xl border border-slate-150 p-4 shadow-xs grid grid-cols-1 md:grid-cols-4 gap-3 items-center">
               <div className="md:col-span-2 relative">
@@ -503,29 +754,27 @@ export default function EngineersDashboard({ currentUser, onTriggerRegister }: E
               </div>
 
               <div>
-                <select
+                <CustomSelect
                   value={selectedSpecialty}
-                  onChange={(e) => setSelectedSpecialty(e.target.value)}
-                  className="w-full text-xs px-3 py-2.5 rounded-xl border border-slate-200 bg-white"
-                >
-                  <option value="">All Specialties</option>
-                  {SPECIALTIES.map(spec => (
-                    <option key={spec} value={spec}>{spec}</option>
-                  ))}
-                </select>
+                  onChange={(val) => setSelectedSpecialty(val)}
+                  placeholder="All Specialties"
+                  options={[
+                    { value: '', label: 'All Specialties' },
+                    ...SPECIALTIES.map(spec => ({ value: spec, label: spec }))
+                  ]}
+                />
               </div>
 
               <div>
-                <select
+                <CustomSelect
                   value={selectedState}
-                  onChange={(e) => setSelectedState(e.target.value)}
-                  className="w-full text-xs px-3 py-2.5 rounded-xl border border-slate-200 bg-white"
-                >
-                  <option value="">All Regions / States</option>
-                  {NIGERIAN_STATES.map(st => (
-                    <option key={st} value={st}>{st}</option>
-                  ))}
-                </select>
+                  onChange={(val) => setSelectedState(val)}
+                  placeholder="All Regions / States"
+                  options={[
+                    { value: '', label: 'All Regions / States' },
+                    ...NIGERIAN_STATES.map(st => ({ value: st, label: st }))
+                  ]}
+                />
               </div>
             </div>
 
@@ -843,7 +1092,174 @@ export default function EngineersDashboard({ currentUser, onTriggerRegister }: E
             </motion.div>
           </div>
         )}
+
+        {/* CALIBRATION SIGNOFF MODAL */}
+        {selectedAudit && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl max-w-2xl w-full max-h-[88vh] overflow-hidden flex flex-col shadow-2xl border border-slate-150"
+            >
+              {/* Modal Header */}
+              <div className="p-5 border-b border-slate-150 flex items-center justify-between bg-slate-900 text-white">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-cyan-900 text-cyan-300 rounded-xl">
+                    <ShieldCheck className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-sm leading-snug">On-Site Calibration Testing Protocol</h3>
+                    <p className="text-[11px] text-cyan-200/80 font-mono">
+                      Request ID: {selectedAudit.id} • Tokunbo Verification
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setSelectedAudit(null)}
+                  className="p-1.5 hover:bg-slate-800 rounded-xl transition-colors cursor-pointer text-slate-400 hover:text-slate-200"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="flex-1 overflow-y-auto p-6 space-y-5 text-xs">
+                {/* Equipment & Deal Overview */}
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-2">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Equipment Under Test</span>
+                      <h4 className="font-extrabold text-slate-900 text-sm">{selectedAudit.listing_title}</h4>
+                    </div>
+                    <span className="bg-cyan-100 text-cyan-800 font-mono text-[11px] px-2 py-0.5 rounded font-bold">
+                      {selectedAudit.listing_condition || 'Tokunbo Used'}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-200 text-slate-600">
+                    <div>Buyer Facility: <strong>{selectedAudit.buyer_name}</strong></div>
+                    <div>Location: <strong>{selectedAudit.location_city}, {selectedAudit.location_state}</strong></div>
+                    <div>Assigned Engineer: <strong>{selectedAudit.engineer_name}</strong></div>
+                    <div>Audit Fee: <strong>₦{(selectedAudit.fee_ngn || 65000).toLocaleString()}</strong></div>
+                  </div>
+                </div>
+
+                {/* Interactive Calibration Checklist Table */}
+                <div className="space-y-3">
+                  <h4 className="font-bold text-slate-900 text-xs flex items-center justify-between">
+                    <span>Biomedical Testing Checklist (5 Calibration Points)</span>
+                    <span className="text-[10px] font-mono text-cyan-700 bg-cyan-50 px-2 py-0.5 rounded border border-cyan-100">
+                      Standard EN-60601 Protocol
+                    </span>
+                  </h4>
+
+                  <div className="space-y-2.5">
+                    {auditChecklistState.map((item) => (
+                      <div key={item.id} className="border border-slate-200 rounded-2xl p-3.5 bg-white space-y-2 shadow-2xs">
+                        <div className="flex items-center justify-between">
+                          <span className="font-extrabold text-slate-900 text-xs">{item.title}</span>
+                          
+                          {/* Toggle Status */}
+                          <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg border">
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateChecklistItem(item.id, 'status', 'pass')}
+                              className={`px-2.5 py-1 rounded-md font-bold text-[10px] transition-all cursor-pointer ${
+                                item.status === 'pass'
+                                  ? 'bg-emerald-600 text-white shadow-2xs'
+                                  : 'text-slate-500 hover:text-slate-800'
+                              }`}
+                            >
+                              PASS
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateChecklistItem(item.id, 'status', 'fail')}
+                              className={`px-2.5 py-1 rounded-md font-bold text-[10px] transition-all cursor-pointer ${
+                                item.status === 'fail'
+                                  ? 'bg-rose-600 text-white shadow-2xs'
+                                  : 'text-slate-500 hover:text-slate-800'
+                              }`}
+                            >
+                              DEFECT
+                            </button>
+                          </div>
+                        </div>
+
+                        <p className="text-[11px] text-slate-500 leading-snug">{item.description}</p>
+
+                        <div className="grid grid-cols-2 gap-2 pt-1">
+                          <input
+                            type="text"
+                            value={item.measured_value || ''}
+                            onChange={(e) => handleUpdateChecklistItem(item.id, 'measured_value', e.target.value)}
+                            placeholder="e.g., Measured 220V, 0.02mA leakage"
+                            className="bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-[11px] font-mono"
+                          />
+                          <input
+                            type="text"
+                            value={item.notes || ''}
+                            onChange={(e) => handleUpdateChecklistItem(item.id, 'notes', e.target.value)}
+                            placeholder="Engineer observation notes..."
+                            className="bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-[11px]"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Engineer Verdict Textarea */}
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-600 mb-1">Overall Engineer Calibration Verdict & Recommendations</label>
+                  <textarea
+                    rows={2}
+                    value={auditVerdictNotes}
+                    onChange={(e) => setAuditVerdictNotes(e.target.value)}
+                    placeholder="Provide full technical summary, missing accessories noted, or calibration certificate details..."
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs leading-relaxed"
+                  />
+                </div>
+
+                {/* Footer Submit buttons */}
+                <div className="pt-2 border-t border-slate-150 flex items-center justify-between gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedAudit(null)}
+                    className="px-4 py-2.5 border border-slate-200 rounded-xl hover:bg-slate-50 text-slate-600 font-bold"
+                  >
+                    Cancel
+                  </button>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={submittingReport}
+                      onClick={() => handleSubmitAuditReport('failed_with_defects')}
+                      className="bg-rose-600 hover:bg-rose-700 text-white font-bold px-4 py-2.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5"
+                    >
+                      <XCircle className="h-4 w-4" />
+                      <span>Report Defects / Reject</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={submittingReport}
+                      onClick={() => handleSubmitAuditReport('passed')}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-5 py-2.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
+                    >
+                      <ShieldCheck className="h-4 w-4" />
+                      <span>{submittingReport ? 'Signing off...' : 'Pass & Issue Calibration Certificate'}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
       </AnimatePresence>
     </div>
   );
 }
+

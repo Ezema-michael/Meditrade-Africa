@@ -4,6 +4,7 @@ import {
   Edit3, Send, RefreshCw, FileText, Check, AlertCircle, ChevronRight, Phone, Mail, Sparkles
 } from 'lucide-react';
 import { Lead, LeadStatus, ChatMessage } from '../types';
+import CustomSelect from './CustomSelect';
 
 interface LeadsDashboardProps {
   currentUserId: string;
@@ -360,19 +361,19 @@ export default function LeadsDashboard({ currentUserId, currentUserRole }: Leads
                   </div>
                   
                   {/* Status update controller */}
-                  <div className="flex items-center gap-2">
-                    <span className="text-[11px] font-bold text-slate-500 uppercase">Pipeline:</span>
-                    <select
+                  <div className="flex items-center gap-2 min-w-[200px]">
+                    <span className="text-[11px] font-bold text-slate-500 uppercase shrink-0">Pipeline:</span>
+                    <CustomSelect
                       value={selectedLead.status}
-                      onChange={(e) => handleUpdateStatus(e.target.value as LeadStatus)}
-                      className="bg-white border border-slate-200 text-slate-800 text-[11px] font-bold rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
-                    >
-                      <option value="new">🔴 New Lead</option>
-                      <option value="discussion">🟡 In Discussion</option>
-                      <option value="quote_sent">🔵 Quote Placed</option>
-                      <option value="won">🟢 Won / Fulfilled</option>
-                      <option value="lost">⚫ Lost / Closed</option>
-                    </select>
+                      onChange={(val) => handleUpdateStatus(val as LeadStatus)}
+                      options={[
+                        { value: 'new', label: '🔴 New Lead' },
+                        { value: 'discussion', label: '🟡 In Discussion' },
+                        { value: 'quote_sent', label: '🔵 Quote Placed' },
+                        { value: 'won', label: '🟢 Won / Fulfilled' },
+                        { value: 'lost', label: '⚫ Lost / Closed' },
+                      ]}
+                    />
                   </div>
                 </div>
 

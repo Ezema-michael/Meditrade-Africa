@@ -5,7 +5,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { ProcurementRequest, ProcurementResponse, Category } from '../types';
-import { FileText, PlusCircle, Clock, MapPin, Tag, ShieldAlert, CheckCircle, Send, PhoneCall, Sparkles, MessageSquare } from 'lucide-react';
+import { FileText, PlusCircle, Clock, MapPin, Tag, ShieldAlert, CheckCircle, Send, PhoneCall, Sparkles, MessageSquare, Truck } from 'lucide-react';
+import CustomSelect from './CustomSelect';
+import { InterStateLogisticsEstimator } from './InterStateLogisticsEstimator';
 
 interface ProcurementHubProps {
   categories: Category[];
@@ -17,7 +19,9 @@ export default function ProcurementHub({ categories, sellerId, userId }: Procure
   const [rfqs, setRfqs] = useState<ProcurementRequest[]>([]);
   const [loading, setLoading] = useState(false);
   const [showPostForm, setShowPostForm] = useState(false);
+  const [showLogisticsModal, setShowLogisticsModal] = useState(false);
   const [activeResponseRfqId, setActiveResponseRfqId] = useState<string | null>(null);
+
 
   // Active responses list
   const [quotes, setQuotes] = useState<ProcurementResponse[]>([]);
@@ -203,14 +207,25 @@ export default function ProcurementHub({ categories, sellerId, userId }: Procure
           </p>
         </div>
 
-        <button
-          onClick={() => setShowPostForm(!showPostForm)}
-          className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold py-3 px-5 rounded-xl flex items-center justify-center gap-2 cursor-pointer shadow-xs transition-colors self-start sm:self-auto"
-        >
-          <PlusCircle className="h-4.5 w-4.5" />
-          <span>Post Hospital Procurement RFQ</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+          <button
+            onClick={() => setShowLogisticsModal(true)}
+            className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-2 cursor-pointer shadow-xs transition-colors"
+          >
+            <Truck className="h-4.5 w-4.5 text-cyan-400" />
+            <span>Estimate Inter-State Logistics</span>
+          </button>
+
+          <button
+            onClick={() => setShowPostForm(!showPostForm)}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold py-3 px-5 rounded-xl flex items-center justify-center gap-2 cursor-pointer shadow-xs transition-colors"
+          >
+            <PlusCircle className="h-4.5 w-4.5" />
+            <span>Post Hospital Procurement RFQ</span>
+          </button>
+        </div>
       </div>
+
 
       {/* Post form trigger */}
       {showPostForm && (
@@ -235,15 +250,12 @@ export default function ProcurementHub({ categories, sellerId, userId }: Procure
               <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
                 Estimated Category
               </label>
-              <select
+              <CustomSelect
                 value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-800"
-              >
-                {categories.map(c => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
+                onChange={(val) => setCategory(val)}
+                options={categories.map(c => ({ value: c.id, label: c.name }))}
+                placeholder="Select Category"
+              />
             </div>
 
             <div className="grid grid-cols-2 gap-2">
@@ -275,32 +287,32 @@ export default function ProcurementHub({ categories, sellerId, userId }: Procure
               <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
                 Urgency Tier
               </label>
-              <select
+              <CustomSelect
                 value={urgency}
-                onChange={(e) => setUrgency(e.target.value as any)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-800"
-              >
-                <option value="low">Low - General stock refresh</option>
-                <option value="medium">Medium - Coming weeks</option>
-                <option value="high">High - Opening theatre next week</option>
-                <option value="critical">Critical - Patient waiting</option>
-              </select>
+                onChange={(val) => setUrgency(val as any)}
+                options={[
+                  { value: 'low', label: 'Low - General stock refresh' },
+                  { value: 'medium', label: 'Medium - Coming weeks' },
+                  { value: 'high', label: 'High - Opening theatre next week' },
+                  { value: 'critical', label: 'Critical - Patient waiting' },
+                ]}
+              />
             </div>
 
             <div>
               <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
                 State Location (Nigeria)
               </label>
-              <select
+              <CustomSelect
                 value={state}
-                onChange={(e) => setState(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-800"
-              >
-                <option value="Lagos">Lagos State</option>
-                <option value="Abuja (FCT)">Abuja FCT</option>
-                <option value="Enugu">Enugu State</option>
-                <option value="Rivers">Rivers State</option>
-              </select>
+                onChange={(val) => setState(val)}
+                options={[
+                  { value: 'Lagos', label: 'Lagos State' },
+                  { value: 'Abuja (FCT)', label: 'Abuja FCT' },
+                  { value: 'Enugu', label: 'Enugu State' },
+                  { value: 'Rivers', label: 'Rivers State' },
+                ]}
+              />
             </div>
 
             <div>
@@ -555,6 +567,17 @@ export default function ProcurementHub({ categories, sellerId, userId }: Procure
           })}
         </div>
       )}
+
+      {/* INTER-STATE LOGISTICS ESTIMATOR MODAL */}
+      {showLogisticsModal && (
+        <InterStateLogisticsEstimator
+          isOpen={showLogisticsModal}
+          onClose={() => setShowLogisticsModal(false)}
+          initialOriginState="Lagos"
+          initialDestinationState="Abuja (FCT)"
+        />
+      )}
     </div>
   );
 }
+

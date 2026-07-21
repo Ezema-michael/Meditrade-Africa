@@ -4,6 +4,7 @@ import {
   ChevronDown, Phone, Mail, FileText, Check, Save,
   Users, Stethoscope, RefreshCw, Star, ArrowRight, Sparkles
 } from 'lucide-react';
+import FileUpload from './FileUpload';
 
 interface UserProfileMenuProps {
   currentUser: {
@@ -12,6 +13,7 @@ interface UserProfileMenuProps {
     role: string;
     businessName: string;
     phone?: string;
+    profileImage?: string;
   };
   onUserChange: (user: any) => void;
   availableUsers?: any[];
@@ -25,6 +27,7 @@ export default function UserProfileMenu({ currentUser, onUserChange, availableUs
   const [businessName, setBusinessName] = useState(currentUser.businessName);
   const [phone, setPhone] = useState(currentUser.phone || '+2348000000000');
   const [cacNumber, setCacNumber] = useState('');
+  const [profileImage, setProfileImage] = useState(currentUser.profileImage || '');
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
@@ -32,6 +35,7 @@ export default function UserProfileMenu({ currentUser, onUserChange, availableUs
   useEffect(() => {
     setEmail(currentUser.email);
     setBusinessName(currentUser.businessName);
+    setProfileImage(currentUser.profileImage || '');
     // Fetch detailed user profile from server to get phone and businessName
     const fetchProfile = async () => {
       try {
@@ -41,12 +45,18 @@ export default function UserProfileMenu({ currentUser, onUserChange, availableUs
           const dbUser = data.tables.users.find((u: any) => u.id === currentUser.id);
           if (dbUser) {
             setPhone(dbUser.phone || '+2348000000000');
+            if (dbUser.profile_image_url) {
+              setProfileImage(dbUser.profile_image_url);
+            }
           }
           if (currentUser.role === 'seller') {
             const dbSeller = data.tables.sellers.find((s: any) => s.user_id === currentUser.id);
             if (dbSeller) {
               setBusinessName(dbSeller.business_name);
               setCacNumber(dbSeller.cac_number || 'RC-998822');
+              if (dbSeller.logo_url) {
+                setProfileImage(dbSeller.logo_url);
+              }
             }
           }
         }
@@ -73,7 +83,8 @@ export default function UserProfileMenu({ currentUser, onUserChange, availableUs
           email,
           phone,
           businessName,
-          cac_number: cacNumber
+          cac_number: cacNumber,
+          profile_image_url: profileImage
         })
       });
 
@@ -88,7 +99,8 @@ export default function UserProfileMenu({ currentUser, onUserChange, availableUs
           ...currentUser,
           email: email,
           businessName: businessName,
-          phone: phone
+          phone: phone,
+          profileImage: profileImage
         });
       }
     } catch (err) {
@@ -165,9 +177,18 @@ export default function UserProfileMenu({ currentUser, onUserChange, availableUs
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center gap-2 p-1.5 hover:bg-slate-50 border border-slate-100 rounded-xl transition-all cursor-pointer focus:outline-none"
       >
-        <div className={`h-8 w-8 rounded-full flex items-center justify-center font-black text-xs shadow-xs ${getAvatarBg()}`}>
-          {getInitial()}
-        </div>
+        {profileImage ? (
+          <img 
+            src={profileImage} 
+            alt="Profile" 
+            referrerPolicy="no-referrer" 
+            className="h-8 w-8 rounded-full object-cover shadow-xs border border-slate-200" 
+          />
+        ) : (
+          <div className={`h-8 w-8 rounded-full flex items-center justify-center font-black text-xs shadow-xs ${getAvatarBg()}`}>
+            {getInitial()}
+          </div>
+        )}
         <div className="hidden sm:block text-left">
           <span className="text-[11px] font-black text-slate-800 block leading-none">
             {currentUser.role === 'admin' ? 'Michael' : currentUser.role === 'buyer' ? 'Fatima' : currentUser.role === 'seller' ? 'Chidi Obi' : 'Guest Visitor'}
@@ -187,9 +208,18 @@ export default function UserProfileMenu({ currentUser, onUserChange, availableUs
             
             {/* Header / Avatar */}
             <div className="flex items-start gap-3.5 pb-4 border-b border-slate-100">
-              <div className={`h-11 w-11 rounded-full flex items-center justify-center font-black text-sm shadow-md shrink-0 ${getAvatarBg()}`}>
-                {getInitial()}
-              </div>
+              {profileImage ? (
+                <img 
+                  src={profileImage} 
+                  alt="Profile" 
+                  referrerPolicy="no-referrer" 
+                  className="h-11 w-11 rounded-full object-cover shadow-md shrink-0 border border-slate-200" 
+                />
+              ) : (
+                <div className={`h-11 w-11 rounded-full flex items-center justify-center font-black text-sm shadow-md shrink-0 ${getAvatarBg()}`}>
+                  {getInitial()}
+                </div>
+              )}
               <div className="space-y-1 min-w-0">
                 <p className="font-extrabold text-sm text-slate-900 truncate">
                   {currentUser.role === 'admin' 
@@ -316,6 +346,32 @@ export default function UserProfileMenu({ currentUser, onUserChange, availableUs
                       />
                     </div>
                   )}
+
+                  <div className="pt-1.5">
+                    <FileUpload 
+                      onUploadSuccess={(url) => setProfileImage(url)} 
+                      acceptType="image" 
+                      label="Upload Profile Photo / Company Logo" 
+                    />
+                    {profileImage && (
+                      <div className="flex items-center gap-2 mt-2 p-1.5 bg-slate-50 border border-slate-100 rounded-xl">
+                        <img 
+                          src={profileImage} 
+                          alt="Profile preview" 
+                          referrerPolicy="no-referrer" 
+                          className="h-10 w-10 rounded-lg object-cover border border-slate-200" 
+                        />
+                        <span className="text-[9px] text-slate-500 font-mono truncate max-w-[150px]">{profileImage}</span>
+                        <button 
+                          type="button" 
+                          onClick={() => setProfileImage('')} 
+                          className="ml-auto text-[10px] text-rose-500 hover:underline font-bold"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <div className="flex gap-2 pt-1.5">

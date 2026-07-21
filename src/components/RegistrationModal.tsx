@@ -4,6 +4,7 @@ import {
   Mail, Phone, Building, FileText, MapPin, Sparkles, Loader2 
 } from 'lucide-react';
 import { NIGERIAN_STATES } from '../data';
+import CustomSelect from './CustomSelect';
 
 interface RegistrationModalProps {
   isOpen: boolean;
@@ -265,18 +266,11 @@ export default function RegistrationModal({ isOpen, onClose, onRegisterSuccess }
                 {/* Location State */}
                 <div className="col-span-2 sm:col-span-1 space-y-1">
                   <label className="text-[10px] font-bold text-slate-500 uppercase block">State</label>
-                  <div className="relative">
-                    <MapPin className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                    <select
-                      value={state}
-                      onChange={(e) => setState(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all cursor-pointer"
-                    >
-                      {NIGERIAN_STATES.map(st => (
-                        <option key={st} value={st}>{st}</option>
-                      ))}
-                    </select>
-                  </div>
+                  <CustomSelect
+                    value={state}
+                    onChange={(val) => setState(val)}
+                    options={NIGERIAN_STATES.map(st => ({ value: st, label: st }))}
+                  />
                 </div>
 
                 {/* Location City */}

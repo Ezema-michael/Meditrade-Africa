@@ -30,7 +30,10 @@ import {
   Send,
   Bell,
   FileText,
-  Wrench
+  Wrench,
+  ShoppingBag,
+  ArrowLeftRight,
+  Truck
 } from 'lucide-react';
 
 import { Listing, Category, Seller, SubscriptionPlan } from './types';
@@ -46,6 +49,12 @@ import LeadsDashboard from './components/LeadsDashboard';
 import UserProfileMenu from './components/UserProfileMenu';
 import RegistrationModal from './components/RegistrationModal';
 import EngineersDashboard from './components/EngineersDashboard';
+import VendorDashboard from './components/VendorDashboard';
+import EscrowFinancingPortal from './components/EscrowFinancingPortal';
+import DeviceComparisonEngine from './components/DeviceComparisonEngine';
+import CustomSelect from './components/CustomSelect';
+import { InterStateLogisticsEstimator } from './components/InterStateLogisticsEstimator';
+
 
 interface TabGuestRestrictionNoticeProps {
   tabName: string;
@@ -118,7 +127,23 @@ function TabGuestRestrictionNotice({ tabName, onTriggerRegister, onFastLogin }: 
 
 export default function App() {
   // Current active viewport tab
-  const [activeTab, setActiveTab] = useState<'marketplace' | 'ai_magic' | 'procure' | 'leads' | 'admin' | 'devops' | 'pricing' | 'engineers'>('marketplace');
+  const [activeTab, setActiveTab] = useState<'marketplace' | 'ai_magic' | 'procure' | 'leads' | 'admin' | 'devops' | 'pricing' | 'engineers' | 'vendor' | 'escrow' | 'compare'>('marketplace');
+
+  // Side-by-side medical device technical comparison state
+  const [comparedListingIds, setComparedListingIds] = useState<string[]>([]);
+
+  const handleToggleCompare = (listing: Listing) => {
+    setComparedListingIds(prev => {
+      if (prev.includes(listing.id)) {
+        return prev.filter(id => id !== listing.id);
+      }
+      if (prev.length >= 4) {
+        alert("You can select up to 4 medical devices for side-by-side technical comparison.");
+        return prev;
+      }
+      return [...prev, listing.id];
+    });
+  };
 
   // Directory listing states
   const [listings, setListings] = useState<Listing[]>([]);
@@ -194,6 +219,8 @@ export default function App() {
   const [activeReportId, setActiveReportId] = useState<string | null>(null);
   const [reportReason, setReportReason] = useState('');
   const [showReportSuccess, setShowReportSuccess] = useState(false);
+  const [showGlobalLogisticsModal, setShowGlobalLogisticsModal] = useState(false);
+
 
   // Verification request triggered inside user space
   const [cacRegNumber, setCacRegNumber] = useState('');
@@ -361,6 +388,28 @@ export default function App() {
   }, [currentUser?.id]);
 
   useEffect(() => {
+    const syncSellerProfile = async () => {
+      if (!currentUser?.id) {
+        setSellerProfile(null);
+        return;
+      }
+      try {
+        const res = await fetch(`/api/sellers/${currentUser.id}`);
+        if (res.ok) {
+          const data = await res.json();
+          setSellerProfile(data);
+        } else {
+          setSellerProfile(null);
+        }
+      } catch (err) {
+        console.error('Failed to sync seller profile:', err);
+        setSellerProfile(null);
+      }
+    };
+    syncSellerProfile();
+  }, [currentUser?.id]);
+
+  useEffect(() => {
     fetchNotifications(currentUser?.id);
     const interval = setInterval(() => {
       fetchNotifications(currentUser?.id);
@@ -409,18 +458,31 @@ export default function App() {
                 { id: 'usr-5', role: 'buyer', displayName: 'Hospital Purchaser (Fatima)' },
                 { id: 'usr-1', role: 'seller', displayName: 'Equipment Dealer (Chidi Obi)' }
               ]).map(u => (
-                <option key={u.id} value={u.id}>
+                <option key={u.id} value={u.id} className="bg-slate-900 text-white font-sans p-2">
                   {u.role === 'admin' ? '🛡️' : u.role === 'buyer' ? '🏥' : '🚚'} {u.displayName}
                 </option>
               ))}
-              <option value="REGISTER_NEW" className="font-extrabold text-indigo-300">✨ Register New Operator Node...</option>
+              <option value="REGISTER_NEW" className="bg-slate-900 text-indigo-300 font-extrabold p-2">✨ Register New Operator Node...</option>
             </select>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
+          {/* Quick Inter-State Logistics Estimator Trigger */}
+          <button
+            onClick={() => setShowGlobalLogisticsModal(true)}
+            className="p-1.5 bg-indigo-700/80 hover:bg-indigo-700 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer text-[11px] font-bold text-cyan-200 border border-indigo-500/30"
+            title="Calculate real-time inter-state delivery costs for heavy medical equipment"
+          >
+            <Truck className="h-3.5 w-3.5 text-cyan-400" />
+            <span>Inter-State Logistics</span>
+          </button>
+
+          <span className="text-indigo-300">|</span>
+
           {/* Notifications Trigger */}
           <div className="relative">
+
             <button 
               onClick={() => {
                 setShowNotifications(!showNotifications);
@@ -526,6 +588,29 @@ export default function App() {
               <span>Leads & Direct Chat</span>
             </button>
             <button
+              onClick={() => setActiveTab('escrow')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                activeTab === 'escrow' ? 'bg-indigo-50 text-indigo-600 font-extrabold border border-indigo-100' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+              }`}
+            >
+              <DollarSign className="h-4 w-4 text-emerald-600 font-bold" />
+              <span>Escrow & Lease Financing</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('compare')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                activeTab === 'compare' ? 'bg-indigo-50 text-indigo-600 font-extrabold border border-indigo-100' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+              }`}
+            >
+              <ArrowLeftRight className="h-4 w-4 text-indigo-600 font-bold" />
+              <span>AI Tech Comparison</span>
+              {comparedListingIds.length > 0 && (
+                <span className="bg-indigo-600 text-white px-1.5 py-0.5 rounded-full text-[10px] font-black">
+                  {comparedListingIds.length}
+                </span>
+              )}
+            </button>
+            <button
               onClick={() => setActiveTab('engineers')}
               className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                 activeTab === 'engineers' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
@@ -533,6 +618,15 @@ export default function App() {
             >
               <Wrench className="h-4 w-4 text-indigo-600 animate-pulse" />
               <span>Engineers & Services</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('vendor')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                activeTab === 'vendor' ? 'bg-indigo-50 text-indigo-650 font-extrabold' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+              }`}
+            >
+              <ShoppingBag className="h-4 w-4 text-indigo-600" />
+              <span>My Inventory</span>
             </button>
             <button
               onClick={() => setActiveTab('pricing')}
@@ -583,9 +677,11 @@ export default function App() {
         {/* Small screen role selection tab alerts */}
         <div className="lg:hidden bg-slate-100 flex overflow-x-auto justify-start border-t border-slate-200">
           <button onClick={() => setActiveTab('marketplace')} className={`px-4 py-3.5 text-xs font-bold whitespace-nowrap cursor-pointer ${activeTab === 'marketplace' ? 'border-b-2 border-indigo-600 text-indigo-600' : ''}`}>Directory</button>
+          <button onClick={() => setActiveTab('vendor')} className={`px-4 py-3.5 text-xs font-bold whitespace-nowrap cursor-pointer ${activeTab === 'vendor' ? 'border-b-2 border-indigo-600 text-indigo-600' : ''}`}>My Inventory</button>
           <button onClick={() => setActiveTab('ai_magic')} className={`px-4 py-3.5 text-xs font-bold whitespace-nowrap cursor-pointer ${activeTab === 'ai_magic' ? 'border-b-2 border-indigo-600 text-indigo-600' : ''}`}>WhatsApp Import</button>
           <button onClick={() => setActiveTab('procure')} className={`px-4 py-3.5 text-xs font-bold whitespace-nowrap cursor-pointer ${activeTab === 'procure' ? 'border-b-2 border-indigo-600 text-indigo-600' : ''}`}>Hospital RFQs</button>
           <button onClick={() => setActiveTab('leads')} className={`px-4 py-3.5 text-xs font-bold whitespace-nowrap cursor-pointer ${activeTab === 'leads' ? 'border-b-2 border-indigo-600 text-indigo-600' : ''}`}>Leads & Chat</button>
+          <button onClick={() => setActiveTab('escrow')} className={`px-4 py-3.5 text-xs font-bold whitespace-nowrap cursor-pointer ${activeTab === 'escrow' ? 'border-b-2 border-indigo-600 text-indigo-600' : ''}`}>Escrow & Financing</button>
           <button onClick={() => setActiveTab('engineers')} className={`px-4 py-3.5 text-xs font-bold whitespace-nowrap cursor-pointer ${activeTab === 'engineers' ? 'border-b-2 border-indigo-600 text-indigo-600' : ''}`}>Engineers & Services</button>
           <button onClick={() => setActiveTab('admin')} className={`px-4 py-3.5 text-xs font-bold whitespace-nowrap cursor-pointer ${activeTab === 'admin' ? 'border-b-2 border-indigo-600 text-indigo-600' : ''}`}>Moderation Console</button>
           <button onClick={() => setActiveTab('devops')} className={`px-4 py-3.5 text-xs font-bold whitespace-nowrap cursor-pointer ${activeTab === 'devops' ? 'border-b-2 border-indigo-600 text-indigo-600' : ''}`}>GCP IAC Blueprints</button>
@@ -771,33 +867,35 @@ export default function App() {
 
                     {/* State selector */}
                     <div className="lg:col-span-3">
-                      <select
+                      <CustomSelect
                         value={selectedState}
-                        onChange={(e) => setSelectedState(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-3 text-xs text-slate-600 focus:outline-none focus:ring-1 focus:ring-indigo-600"
-                      >
-                        <option value="">All Nigerian States (Port Location)</option>
-                        {NIGERIAN_STATES.map(st => (
-                          <option key={st} value={st}>{st} State</option>
-                        ))}
-                      </select>
+                        onChange={(val) => setSelectedState(val)}
+                        placeholder="All Nigerian States (Port Location)"
+                        options={[
+                          { value: '', label: 'All Nigerian States (Port Location)' },
+                          ...NIGERIAN_STATES.map(st => ({ value: st, label: `${st} State` }))
+                        ]}
+                      />
                     </div>
 
                     {/* Condition selector */}
                     <div className="lg:col-span-2">
-                      <select
+                      <CustomSelect
                         value={selectedCondition}
-                        onChange={(e) => setSelectedCondition(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-3 text-xs text-slate-600 focus:outline-none"
-                      >
-                        <option value="">All Conditions</option>
-                        <option value="new">New (Brand New / Unused)</option>
-                        <option value="refurbished">Refurbished Standard</option>
-                        <option value="working_used">Working Used</option>
-                        <option value="faulty">Faulty (Needs repair)</option>
-                        <option value="parts_only">For Parts Only</option>
-                        <option value="scrap">Scrap (Salvage value)</option>
-                      </select>
+                        onChange={(val) => setSelectedCondition(val)}
+                        placeholder="All Conditions"
+                        options={[
+                          { value: '', label: 'All Conditions / Usage Types' },
+                          { value: 'new', label: 'Brand New (Tear Rubber)' },
+                          { value: 'foreign_used', label: 'Foreign Used (Tokunbo / Direct Import)' },
+                          { value: 'local_used', label: 'Local Used (Nigerian Used)' },
+                          { value: 'refurbished', label: 'Refurbished Standard' },
+                          { value: 'working_used', label: 'Working Used' },
+                          { value: 'faulty', label: 'Faulty (Needs repair)' },
+                          { value: 'parts_only', label: 'For Parts Only' },
+                          { value: 'scrap', label: 'Scrap (Salvage value)' },
+                        ]}
+                      />
                     </div>
 
                     {/* Apply execution triggers */}
@@ -849,6 +947,8 @@ export default function App() {
                               onReportClick={(id) => setActiveReportId(id)}
                               onInquireChat={handleInquireChat}
                               currentUser={currentUser}
+                              onToggleCompare={handleToggleCompare}
+                              isCompared={comparedListingIds.includes(item.id)}
                             />
                           ))}
                         </div>
@@ -1023,6 +1123,7 @@ export default function App() {
               </div>
 
               <AIDashboard 
+                currentUser={currentUser}
                 sellerId={sellerProfile?.id || 'sel-1'} 
                 onListingPublished={() => {
                   setActiveTab('marketplace');
@@ -1167,7 +1268,71 @@ export default function App() {
           />
         )}
 
+        {/* VIEW 8: Vendor / Seller Inventory Workspace */}
+        {activeTab === 'vendor' && (
+          <VendorDashboard
+            sellerProfile={sellerProfile}
+            categories={CATEGORIES}
+            onListingChanged={fetchListings}
+            currentUser={currentUser}
+          />
+        )}
+
+        {/* VIEW 9: Escrow Protection & Lease Financing Portal */}
+        {activeTab === 'escrow' && (
+          <EscrowFinancingPortal
+            currentUser={currentUser}
+            onRefresh={fetchListings}
+          />
+        )}
+
+        {/* VIEW 10: Side-by-Side Medical Device Technical Comparison Engine */}
+        {activeTab === 'compare' && (
+          <DeviceComparisonEngine
+            listings={listings}
+            initialSelectedIds={comparedListingIds}
+            currentUser={currentUser}
+            onNavigateToEscrow={() => setActiveTab('escrow')}
+            onNavigateToFinancing={() => setActiveTab('escrow')}
+          />
+        )}
+
       </main>
+
+      {/* FLOATING COMPARISON TRAY BAR */}
+      {comparedListingIds.length > 0 && activeTab === 'marketplace' && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 bg-slate-900/95 text-white backdrop-blur-md border border-slate-700/80 rounded-2xl px-5 py-3 shadow-2xl flex items-center gap-4 max-w-xl w-[92%]">
+          <div className="flex items-center gap-2">
+            <div className="h-8 w-8 bg-indigo-600 rounded-xl flex items-center justify-center font-bold text-xs text-white">
+              {comparedListingIds.length}
+            </div>
+            <div>
+              <span className="text-xs font-bold block text-white">
+                {comparedListingIds.length} {comparedListingIds.length === 1 ? 'Device' : 'Devices'} Selected
+              </span>
+              <span className="text-[10px] text-slate-400">
+                Side-by-side spec matrix & Gemini AI evaluation
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 ml-auto">
+            <button
+              onClick={() => setComparedListingIds([])}
+              className="text-slate-400 hover:text-white text-xs px-2 py-1 cursor-pointer"
+            >
+              Clear
+            </button>
+            <button
+              onClick={() => setActiveTab('compare')}
+              className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-4 py-2 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-lg shadow-indigo-600/30 whitespace-nowrap"
+            >
+              <ArrowLeftRight className="h-3.5 w-3.5" />
+              <span>Compare Now</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 4. MODALS AND OVERLAYS */}
       {activeReportId && (
@@ -1275,6 +1440,16 @@ export default function App() {
         }}
       />
 
+      {/* GLOBAL INTER-STATE HEAVY LOGISTICS ESTIMATOR MODAL */}
+      {showGlobalLogisticsModal && (
+        <InterStateLogisticsEstimator
+          isOpen={showGlobalLogisticsModal}
+          onClose={() => setShowGlobalLogisticsModal(false)}
+          currentUser={currentUser}
+        />
+      )}
+
     </div>
   );
 }
+

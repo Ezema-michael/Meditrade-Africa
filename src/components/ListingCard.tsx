@@ -5,7 +5,9 @@
 
 import React, { useState } from 'react';
 import { Listing } from '../types';
-import { MapPin, Phone, ShieldCheck, Heart, Share2, Sparkles, AlertTriangle, MessageSquare, CheckCircle, Eye, X } from 'lucide-react';
+import { MapPin, Phone, ShieldCheck, Heart, Share2, Sparkles, AlertTriangle, MessageSquare, CheckCircle, Eye, X, ChevronLeft, ChevronRight, PlayCircle, ExternalLink, ArrowLeftRight, Wrench, Truck } from 'lucide-react';
+import { PrePurchaseAuditModal } from './PrePurchaseAuditModal';
+import { InterStateLogisticsEstimator } from './InterStateLogisticsEstimator';
 
 interface ListingCardProps {
   key?: string | number;
@@ -15,15 +17,22 @@ interface ListingCardProps {
   onRefresh?: () => void;
   onInquireChat?: (listingId: string) => void;
   currentUser?: any;
+  onToggleCompare?: (listing: Listing) => void;
+  isCompared?: boolean;
 }
 
-export default function ListingCard({ listing, onContactClick, onReportClick, onRefresh, onInquireChat, currentUser }: ListingCardProps) {
+export default function ListingCard({ listing, onContactClick, onReportClick, onRefresh, onInquireChat, currentUser, onToggleCompare, isCompared }: ListingCardProps) {
   const [isFavorite, setIsFavorite] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
+  const [activeImageIdx, setActiveImageIdx] = useState(0);
 
-  // Offers integration states
+  // Offers & Audit & Logistics integration states
   const [showOfferModal, setShowOfferModal] = useState(false);
+  const [showAuditModal, setShowAuditModal] = useState(false);
+  const [showLogisticsModal, setShowLogisticsModal] = useState(false);
   const [buyerName, setBuyerName] = useState('');
+
+
   const [buyerContact, setBuyerContact] = useState('');
   const [offerAmount, setOfferAmount] = useState('');
   const [offerMessage, setOfferMessage] = useState('');
@@ -91,6 +100,8 @@ export default function ListingCard({ listing, onContactClick, onReportClick, on
     switch (condition) {
       case 'new': return 'bg-emerald-50 text-emerald-700 border-emerald-200';
       case 'refurbished': return 'bg-blue-50 text-blue-700 border-blue-200';
+      case 'foreign_used': return 'bg-indigo-50 text-indigo-700 border-indigo-200';
+      case 'local_used': return 'bg-teal-50 text-teal-700 border-teal-200';
       case 'working_used':
       case 'used': return 'bg-sky-50 text-sky-700 border-sky-200';
       case 'faulty': return 'bg-amber-50 text-amber-700 border-amber-200';
@@ -102,8 +113,10 @@ export default function ListingCard({ listing, onContactClick, onReportClick, on
 
   const getConditionLabel = (condition: string) => {
     switch (condition) {
-      case 'new': return 'New';
+      case 'new': return 'Brand New';
       case 'refurbished': return 'Refurbished';
+      case 'foreign_used': return 'Foreign Used (Tokunbo)';
+      case 'local_used': return 'Local Used (Nigerian)';
       case 'working_used':
       case 'used': return 'Working Used';
       case 'faulty': return 'Faulty';
@@ -160,11 +173,49 @@ export default function ListingCard({ listing, onContactClick, onReportClick, on
       {/* Listing Images Carousel / Hero */}
       <div className="relative h-48 w-full bg-slate-50 overflow-hidden">
         <img
-          src={listing.images[0]}
+          src={listing.images[activeImageIdx] || listing.images[0] || 'https://images.unsplash.com/photo-1516549655169-df83a0774514?w=500&auto=format&fit=crop&q=80'}
           alt={listing.title}
           referrerPolicy="no-referrer"
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
         />
+        
+        {listing.images && listing.images.length > 1 && (
+          <>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setActiveImageIdx((prev) => (prev === 0 ? listing.images.length - 1 : prev - 1));
+              }}
+              className="absolute left-2 top-1/2 -translate-y-1/2 bg-white/80 hover:bg-white text-slate-700 h-6 w-6 rounded-full flex items-center justify-center border border-slate-200 shadow-sm z-20 hover:scale-105 cursor-pointer"
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setActiveImageIdx((prev) => (prev === listing.images.length - 1 ? 0 : prev + 1));
+              }}
+              className="absolute right-2 top-1/2 -translate-y-1/2 bg-white/80 hover:bg-white text-slate-700 h-6 w-6 rounded-full flex items-center justify-center border border-slate-200 shadow-sm z-20 hover:scale-105 cursor-pointer"
+            >
+              <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+            {/* Dots */}
+            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1 z-20">
+              {listing.images.map((_, dotIdx) => (
+                <button
+                  key={dotIdx}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActiveImageIdx(dotIdx);
+                  }}
+                  className={`h-1 w-1 rounded-full transition-all cursor-pointer ${
+                    activeImageIdx === dotIdx ? 'bg-indigo-600 scale-125' : 'bg-white/60'
+                  }`}
+                />
+              ))}
+            </div>
+          </>
+        )}
         
         {/* Badges Overlay */}
         <div className="absolute top-3 left-3 flex flex-wrap gap-1.5 pointer-events-none z-10">
@@ -184,11 +235,28 @@ export default function ListingCard({ listing, onContactClick, onReportClick, on
           {getListingTypeBadge(listing.listing_type)}
         </div>
 
-        {/* Favorite Trigger */}
-        <div className="absolute top-3 right-3 flex gap-2">
+        {/* Favorite & Compare Triggers */}
+        <div className="absolute top-3 right-3 flex items-center gap-1.5 z-10">
+          {onToggleCompare && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleCompare(listing);
+              }}
+              title={isCompared ? "Remove from comparison" : "Add to side-by-side comparison"}
+              className={`p-2 rounded-xl backdrop-blur-md transition-all border cursor-pointer ${
+                isCompared 
+                  ? 'bg-indigo-600 border-indigo-700 text-white shadow-md' 
+                  : 'bg-white/80 hover:bg-white border-slate-100 text-slate-600 hover:text-indigo-600'
+              }`}
+            >
+              <ArrowLeftRight className="h-4 w-4" />
+            </button>
+          )}
+
           <button
             onClick={() => setIsFavorite(!isFavorite)}
-            className={`p-2 rounded-xl backdrop-blur-md transition-all border ${
+            className={`p-2 rounded-xl backdrop-blur-md transition-all border cursor-pointer ${
               isFavorite 
                 ? 'bg-rose-50 border-rose-100 text-rose-500' 
                 : 'bg-white/80 hover:bg-white border-slate-100 text-slate-500 hover:text-rose-500'
@@ -241,6 +309,62 @@ export default function ListingCard({ listing, onContactClick, onReportClick, on
           <p className="text-slate-600 text-xs leading-relaxed mb-4 line-clamp-3">
             {listing.description || 'No detailed documentation offered by the healthcare supplier.'}
           </p>
+
+          {/* Collapsible Resources / Media */}
+          {((listing.videos && listing.videos.length > 0) || (listing.links && listing.links.length > 0)) && (
+            <div className="mt-3 bg-slate-50 border border-slate-150 rounded-xl p-3 space-y-2">
+              <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider block">
+                Clinical Media & Specs
+              </span>
+              
+              {/* Videos */}
+              {listing.videos && listing.videos.length > 0 && (
+                <div className="space-y-1">
+                  <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">Video Demos:</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {listing.videos.map((vid, idx) => (
+                      <a
+                        key={idx}
+                        href={vid}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 bg-white hover:bg-indigo-50 text-indigo-600 border border-slate-200 hover:border-indigo-200 px-2 py-1 rounded-md text-[10px] font-bold transition-all cursor-pointer"
+                      >
+                        <PlayCircle className="h-3 w-3" />
+                        <span>Watch Demo #{idx + 1}</span>
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Links */}
+              {listing.links && listing.links.length > 0 && (
+                <div className="space-y-1 pt-1.5 border-t border-slate-200/50">
+                  <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">Datasheets & Docs:</span>
+                  <div className="flex flex-col gap-1">
+                    {listing.links.map((lnk, idx) => {
+                      const parts = lnk.split('|');
+                      const label = parts[0] || 'Specification Reference';
+                      const url = parts[1] || lnk;
+                      return (
+                        <a
+                          key={idx}
+                          href={url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center justify-between bg-white hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 border border-slate-200 px-2.5 py-1.5 rounded-md text-[10px] font-semibold transition-all cursor-pointer"
+                        >
+                          <span className="truncate max-w-[170px]">{label}</span>
+                          <ExternalLink className="h-3 w-3 text-slate-400 flex-shrink-0 ml-1" />
+                        </a>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Bottom Panel Actions & Analytics */}
@@ -278,7 +402,35 @@ export default function ListingCard({ listing, onContactClick, onReportClick, on
 
           {/* Instant Contact & Secure Chat actions */}
           <div className="flex flex-col gap-2">
+            <div className="grid grid-cols-2 gap-2">
+              {/* Certified Pre-Purchase Audit Trigger Button */}
+              <button
+                onClick={() => setShowAuditModal(true)}
+                className="bg-slate-900 hover:bg-slate-800 text-white rounded-xl py-2 px-2.5 flex items-center justify-between gap-1 text-[11px] font-bold shadow-xs transition-all cursor-pointer border border-slate-700/60 group"
+                title="Trigger an independent certified biomedical engineer on-site calibration audit before payment release"
+              >
+                <span className="flex items-center gap-1 truncate">
+                  <ShieldCheck className="h-3.5 w-3.5 text-cyan-400 group-hover:scale-110 transition-transform shrink-0" />
+                  <span className="truncate">Pre-Purchase Audit</span>
+                </span>
+              </button>
+
+              {/* Inter-State Logistics Estimator Trigger Button */}
+              <button
+                onClick={() => setShowLogisticsModal(true)}
+                className="bg-indigo-950 hover:bg-indigo-900 text-indigo-100 rounded-xl py-2 px-2.5 flex items-center justify-between gap-1 text-[11px] font-bold shadow-xs transition-all cursor-pointer border border-indigo-800/80 group"
+                title="Calculate real-time inter-state delivery & protective handling freight costs"
+              >
+                <span className="flex items-center gap-1 truncate">
+                  <Truck className="h-3.5 w-3.5 text-indigo-400 group-hover:scale-110 transition-transform shrink-0" />
+                  <span className="truncate">Inter-State Logistics</span>
+                </span>
+              </button>
+            </div>
+
             <div className="flex gap-2">
+
+
               {listing.listing_type && listing.listing_type !== 'fixed' ? (
                 <button
                   onClick={handleOpenOfferModal}
@@ -504,6 +656,30 @@ export default function ListingCard({ listing, onContactClick, onReportClick, on
           </div>
         </div>
       )}
+
+      {/* PRE-PURCHASE ENGINEERING AUDIT MODAL */}
+      {showAuditModal && (
+        <PrePurchaseAuditModal
+          listing={listing}
+          isOpen={showAuditModal}
+          onClose={() => setShowAuditModal(false)}
+          currentUser={currentUser}
+        />
+      )}
+
+      {/* INTER-STATE LOGISTICS ESTIMATOR MODAL */}
+      {showLogisticsModal && (
+        <InterStateLogisticsEstimator
+          initialListing={listing}
+          initialOriginState={listing.state || 'Lagos'}
+          initialDestinationState="Enugu"
+          isOpen={showLogisticsModal}
+          onClose={() => setShowLogisticsModal(false)}
+          currentUser={currentUser}
+        />
+      )}
     </div>
   );
 }
+
+
