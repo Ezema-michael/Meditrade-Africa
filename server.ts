@@ -609,8 +609,11 @@ app.post("/api/auth/sync-user", (req, res) => {
 // Listings: GET all with filtering
 app.get("/api/listings", (req, res) => {
   let filtered = [...listingsCollection];
-  const { category, state, condition, query, status } = req.query;
+  const { category, state, condition, query, status, seller_id } = req.query;
 
+  if (seller_id) {
+    filtered = filtered.filter(l => l.seller_id === seller_id);
+  }
   if (category) {
     filtered = filtered.filter(l => l.category_id === category || categoriesCollection.find(c => c.id === l.category_id)?.parent_id === category);
   }

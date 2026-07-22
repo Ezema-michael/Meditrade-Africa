@@ -54,6 +54,7 @@ import EscrowFinancingPortal from './components/EscrowFinancingPortal';
 import DeviceComparisonEngine from './components/DeviceComparisonEngine';
 import CustomSelect from './components/CustomSelect';
 import { InterStateLogisticsEstimator } from './components/InterStateLogisticsEstimator';
+import { VendorStorefrontModal } from './components/VendorStorefrontModal';
 
 
 interface TabGuestRestrictionNoticeProps {
@@ -128,6 +129,9 @@ function TabGuestRestrictionNotice({ tabName, onTriggerRegister, onFastLogin }: 
 export default function App() {
   // Current active viewport tab
   const [activeTab, setActiveTab] = useState<'marketplace' | 'ai_magic' | 'procure' | 'leads' | 'admin' | 'devops' | 'pricing' | 'engineers' | 'vendor' | 'escrow' | 'compare'>('marketplace');
+
+  // Vendor Storefront Modal State
+  const [selectedVendorStorefront, setSelectedVendorStorefront] = useState<{ id: string; name?: string } | null>(null);
 
   // Side-by-side medical device technical comparison state
   const [comparedListingIds, setComparedListingIds] = useState<string[]>([]);
@@ -245,10 +249,14 @@ export default function App() {
       }
 
       const res = await fetch(url);
-      const data = await res.json();
-      setListings(data);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setListings(data);
+        }
+      }
     } catch (err) {
-      console.error(err);
+      console.error('Failed to fetch listings:', err);
     } finally {
       setLoadingListings(false);
     }
@@ -259,11 +267,15 @@ export default function App() {
     try {
       const url = userId ? `/api/notifications?user_id=${userId}` : '/api/notifications';
       const res = await fetch(url);
-      const data = await res.json();
-      setNotifications(data);
-      setUnreadNotifCount(data.filter((n: any) => !n.read).length);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setNotifications(data);
+          setUnreadNotifCount(data.filter((n: any) => !n.read).length);
+        }
+      }
     } catch (err) {
-      console.error(err);
+      console.error('Failed to fetch notifications:', err);
     }
   };
 
@@ -810,6 +822,7 @@ export default function App() {
                       onReportClick={(id) => setActiveReportId(id)}
                       onInquireChat={handleInquireChat}
                       currentUser={currentUser}
+                      onViewVendorStorefront={(sellerId, sellerName) => setSelectedVendorStorefront({ id: sellerId, name: sellerName })}
                     />
                   ))}
                 </div>
@@ -949,6 +962,7 @@ export default function App() {
                               currentUser={currentUser}
                               onToggleCompare={handleToggleCompare}
                               isCompared={comparedListingIds.includes(item.id)}
+                              onViewVendorStorefront={(sellerId, sellerName) => setSelectedVendorStorefront({ id: sellerId, name: sellerName })}
                             />
                           ))}
                         </div>
@@ -1446,6 +1460,20 @@ export default function App() {
           isOpen={showGlobalLogisticsModal}
           onClose={() => setShowGlobalLogisticsModal(false)}
           currentUser={currentUser}
+        />
+      )}
+
+      {/* GLOBAL VENDOR STOREFRONT MODAL */}
+      {selectedVendorStorefront && (
+        <VendorStorefrontModal
+          isOpen={!!selectedVendorStorefront}
+          onClose={() => setSelectedVendorStorefront(null)}
+          sellerId={selectedVendorStorefront.id}
+          sellerNameFallback={selectedVendorStorefront.name}
+          categories={CATEGORIES}
+          currentUser={currentUser}
+          onContactSeller={handleContactSeller}
+          onInquireChat={handleInquireChat}
         />
       )}
 

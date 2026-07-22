@@ -8,6 +8,8 @@ import { Listing } from '../types';
 import { MapPin, Phone, ShieldCheck, Heart, Share2, Sparkles, AlertTriangle, MessageSquare, CheckCircle, Eye, X, ChevronLeft, ChevronRight, PlayCircle, ExternalLink, ArrowLeftRight, Wrench, Truck } from 'lucide-react';
 import { PrePurchaseAuditModal } from './PrePurchaseAuditModal';
 import { InterStateLogisticsEstimator } from './InterStateLogisticsEstimator';
+import { ShareModal } from './ShareModal';
+import { VendorStorefrontModal } from './VendorStorefrontModal';
 
 interface ListingCardProps {
   key?: string | number;
@@ -19,9 +21,10 @@ interface ListingCardProps {
   currentUser?: any;
   onToggleCompare?: (listing: Listing) => void;
   isCompared?: boolean;
+  onViewVendorStorefront?: (sellerId: string, sellerName?: string) => void;
 }
 
-export default function ListingCard({ listing, onContactClick, onReportClick, onRefresh, onInquireChat, currentUser, onToggleCompare, isCompared }: ListingCardProps) {
+export default function ListingCard({ listing, onContactClick, onReportClick, onRefresh, onInquireChat, currentUser, onToggleCompare, isCompared, onViewVendorStorefront }: ListingCardProps) {
   const [isFavorite, setIsFavorite] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
   const [activeImageIdx, setActiveImageIdx] = useState(0);
@@ -30,6 +33,8 @@ export default function ListingCard({ listing, onContactClick, onReportClick, on
   const [showOfferModal, setShowOfferModal] = useState(false);
   const [showAuditModal, setShowAuditModal] = useState(false);
   const [showLogisticsModal, setShowLogisticsModal] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [showVendorStorefrontModal, setShowVendorStorefrontModal] = useState(false);
   const [buyerName, setBuyerName] = useState('');
 
 
@@ -163,9 +168,7 @@ export default function ListingCard({ listing, onContactClick, onReportClick, on
   };
 
   const handleShare = () => {
-    navigator.clipboard.writeText(`${window.location.origin}/listings/${listing.slug}`);
-    setIsCopied(true);
-    setTimeout(() => setIsCopied(false), 2000);
+    setShowShareModal(true);
   };
 
   return (
@@ -371,22 +374,34 @@ export default function ListingCard({ listing, onContactClick, onReportClick, on
         <div className="pt-4 border-t border-slate-100 mt-auto">
           {/* Seller micro profile */}
           <div className="flex items-center justify-between mb-3.5">
-            <div className="flex items-center gap-2">
-              <div className="h-7 w-7 bg-indigo-50 rounded-full flex items-center justify-center font-bold text-xs text-indigo-600">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (onViewVendorStorefront) {
+                  onViewVendorStorefront(listing.seller_id, listing.seller_name);
+                } else {
+                  setShowVendorStorefrontModal(true);
+                }
+              }}
+              className="flex items-center gap-2 text-left group/seller cursor-pointer hover:bg-slate-50 p-1 -m-1 rounded-xl transition-all"
+              title={`View ${listing.seller_name || 'Vendor'}'s Storefront & Equipment Catalog`}
+            >
+              <div className="h-7 w-7 bg-indigo-50 group-hover/seller:bg-indigo-600 group-hover/seller:text-white rounded-full flex items-center justify-center font-bold text-xs text-indigo-600 transition-colors">
                 {listing.seller_name ? listing.seller_name.trim().charAt(0) : 'S'}
               </div>
               <div>
-                <div className="text-[11px] font-bold text-slate-800 flex items-center gap-1 max-w-[130px] truncate">
+                <div className="text-[11px] font-bold text-slate-800 group-hover/seller:text-indigo-600 transition-colors flex items-center gap-1 max-w-[130px] truncate">
                   {listing.seller_name || 'Verified Supplier'}
                   {listing.seller_verified && (
                     <ShieldCheck className="h-3.5 w-3.5 text-emerald-500 fill-emerald-100 flex-shrink-0" title="CAC Verification Approved" />
                   )}
                 </div>
-                <div className="text-[10px] text-slate-500 flex items-center gap-1">
-                  <span>Rating: 4.8</span>
+                <div className="text-[10px] text-indigo-600 font-semibold hover:underline flex items-center gap-0.5">
+                  <span>Storefront →</span>
                 </div>
               </div>
-            </div>
+            </button>
 
             {/* View indicators */}
             <div className="flex items-center gap-2 text-[10px] text-slate-400 font-medium">
@@ -676,6 +691,33 @@ export default function ListingCard({ listing, onContactClick, onReportClick, on
           isOpen={showLogisticsModal}
           onClose={() => setShowLogisticsModal(false)}
           currentUser={currentUser}
+        />
+      )}
+
+      {/* SHARE MODAL */}
+      {showShareModal && (
+        <ShareModal
+          isOpen={showShareModal}
+          onClose={() => setShowShareModal(false)}
+          title={listing.title}
+          text={`Verified healthcare equipment available on MediTrade Marketplace:`}
+          url={`${window.location.origin}/listings/${listing.slug || listing.id}`}
+          image={listing.images?.[0]}
+          priceFormatted={priceFormatted}
+          category={listing.category_id}
+        />
+      )}
+
+      {/* VENDOR STOREFRONT MODAL */}
+      {showVendorStorefrontModal && (
+        <VendorStorefrontModal
+          isOpen={showVendorStorefrontModal}
+          onClose={() => setShowVendorStorefrontModal(false)}
+          sellerId={listing.seller_id}
+          sellerNameFallback={listing.seller_name}
+          currentUser={currentUser}
+          onContactSeller={onContactClick}
+          onInquireChat={onInquireChat}
         />
       )}
     </div>

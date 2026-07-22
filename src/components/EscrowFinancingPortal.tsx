@@ -14,6 +14,7 @@ import {
 
 import { EscrowDeal, LeaseFinancingApplication, FinancingPartner, Listing } from '../types';
 import { InterStateLogisticsEstimator } from './InterStateLogisticsEstimator';
+import { VendorStorefrontModal } from './VendorStorefrontModal';
 
 interface EscrowFinancingPortalProps {
   currentUser: any;
@@ -22,6 +23,7 @@ interface EscrowFinancingPortalProps {
 
 export default function EscrowFinancingPortal({ currentUser, onRefresh }: EscrowFinancingPortalProps) {
   const [activeTab, setActiveTab] = useState<'escrow' | 'financing' | 'underwriting' | 'logistics'>('escrow');
+  const [selectedVendorForStorefront, setSelectedVendorForStorefront] = useState<{ id: string; name?: string } | null>(null);
 
 
   // Escrow State
@@ -522,7 +524,17 @@ export default function EscrowFinancingPortal({ currentUser, onRefresh }: Escrow
                         <div className="text-xs text-slate-500 space-x-3 font-mono mt-0.5 flex flex-wrap">
                           <span>Buyer: <strong className="text-slate-800">{deal.buyer_name}</strong></span>
                           <span>•</span>
-                          <span>Vendor: <strong className="text-slate-800">{deal.seller_name}</strong></span>
+                          <span>
+                            Vendor: {' '}
+                            <button
+                              type="button"
+                              onClick={() => setSelectedVendorForStorefront({ id: deal.seller_id, name: deal.seller_name })}
+                              className="text-slate-800 hover:text-indigo-600 font-bold hover:underline cursor-pointer transition-colors"
+                              title={`View Storefront for ${deal.seller_name}`}
+                            >
+                              {deal.seller_name}
+                            </button>
+                          </span>
                         </div>
                       </div>
 
@@ -1121,6 +1133,17 @@ export default function EscrowFinancingPortal({ currentUser, onRefresh }: Escrow
             </form>
           </div>
         </div>
+      )}
+
+      {/* VENDOR STOREFRONT MODAL */}
+      {selectedVendorForStorefront && (
+        <VendorStorefrontModal
+          isOpen={!!selectedVendorForStorefront}
+          onClose={() => setSelectedVendorForStorefront(null)}
+          sellerId={selectedVendorForStorefront.id}
+          sellerNameFallback={selectedVendorForStorefront.name}
+          currentUser={currentUser}
+        />
       )}
 
     </div>

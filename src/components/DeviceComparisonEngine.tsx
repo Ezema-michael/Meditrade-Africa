@@ -25,8 +25,11 @@ import {
   ChevronRight,
   Building2,
   Lock,
-  Layers
+  Layers,
+  Share2
 } from 'lucide-react';
+import { ShareModal } from './ShareModal';
+import { VendorStorefrontModal } from './VendorStorefrontModal';
 
 interface DeviceComparisonEngineProps {
   listings: Listing[];
@@ -81,6 +84,8 @@ export default function DeviceComparisonEngine({
   
   // Highlight differences toggle
   const [highlightDifferences, setHighlightDifferences] = useState<boolean>(false);
+  const [showShareModal, setShowShareModal] = useState<boolean>(false);
+  const [selectedVendorForStorefront, setSelectedVendorForStorefront] = useState<{ id: string; name?: string } | null>(null);
 
   // AI Analysis state
   const [aiLoading, setAiLoading] = useState<boolean>(false);
@@ -400,6 +405,14 @@ export default function DeviceComparisonEngine({
             </div>
 
             <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowShareModal(true)}
+                className="bg-indigo-600 hover:bg-indigo-500 text-white px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
+              >
+                <Share2 className="h-3.5 w-3.5 text-cyan-300" />
+                <span>Share Comparison</span>
+              </button>
+
               <button
                 onClick={handlePrintReport}
                 className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer border border-slate-700"
@@ -764,12 +777,20 @@ export default function DeviceComparisonEngine({
                   </td>
                   {selectedListings.map(l => (
                     <td key={l.id} className="p-4">
-                      <div className="font-bold text-slate-900">{l.seller_name || 'Verified Dealer'}</div>
-                      {l.seller_verified && (
-                        <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600 font-bold mt-0.5">
-                          <ShieldCheck className="h-3 w-3" /> CAC Verified
-                        </span>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => setSelectedVendorForStorefront({ id: l.seller_id, name: l.seller_name })}
+                        className="font-bold text-slate-900 hover:text-indigo-600 text-left transition-colors cursor-pointer group flex flex-col items-start"
+                        title={`View Storefront for ${l.seller_name || 'Vendor'}`}
+                      >
+                        <span className="group-hover:underline">{l.seller_name || 'Verified Dealer'}</span>
+                        {l.seller_verified && (
+                          <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600 font-bold mt-0.5">
+                            <ShieldCheck className="h-3 w-3" /> CAC Verified
+                          </span>
+                        )}
+                        <span className="text-[10px] text-indigo-600 font-semibold group-hover:underline">View Storefront →</span>
+                      </button>
                     </td>
                   ))}
                 </tr>
@@ -936,6 +957,28 @@ export default function DeviceComparisonEngine({
             </div>
           </div>
         </div>
+      )}
+
+      {/* SHARE COMPARISON MODAL */}
+      {showShareModal && (
+        <ShareModal
+          isOpen={showShareModal}
+          onClose={() => setShowShareModal(false)}
+          title={`Clinical Equipment Comparison Analysis (${facilityContext})`}
+          text={`Side-by-side technical comparison of ${selectedListings.map(l => l.title).join(' vs ')}.`}
+          url={`${window.location.origin}/compare?ids=${selectedIds.join(',')}`}
+          category="Clinical Equipment Comparison"
+        />
+      )}
+
+      {/* VENDOR STOREFRONT MODAL */}
+      {selectedVendorForStorefront && (
+        <VendorStorefrontModal
+          isOpen={!!selectedVendorForStorefront}
+          onClose={() => setSelectedVendorForStorefront(null)}
+          sellerId={selectedVendorForStorefront.id}
+          sellerNameFallback={selectedVendorForStorefront.name}
+        />
       )}
 
     </div>

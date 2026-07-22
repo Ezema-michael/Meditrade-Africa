@@ -5,9 +5,11 @@
 
 import React, { useState, useEffect } from 'react';
 import { ProcurementRequest, ProcurementResponse, Category } from '../types';
-import { FileText, PlusCircle, Clock, MapPin, Tag, ShieldAlert, CheckCircle, Send, PhoneCall, Sparkles, MessageSquare, Truck } from 'lucide-react';
+import { FileText, PlusCircle, Clock, MapPin, Tag, ShieldAlert, CheckCircle, Send, PhoneCall, Sparkles, MessageSquare, Truck, Share2 } from 'lucide-react';
 import CustomSelect from './CustomSelect';
 import { InterStateLogisticsEstimator } from './InterStateLogisticsEstimator';
+import { ShareModal } from './ShareModal';
+import { VendorStorefrontModal } from './VendorStorefrontModal';
 
 interface ProcurementHubProps {
   categories: Category[];
@@ -21,6 +23,8 @@ export default function ProcurementHub({ categories, sellerId, userId }: Procure
   const [showPostForm, setShowPostForm] = useState(false);
   const [showLogisticsModal, setShowLogisticsModal] = useState(false);
   const [activeResponseRfqId, setActiveResponseRfqId] = useState<string | null>(null);
+  const [selectedShareRfq, setSelectedShareRfq] = useState<ProcurementRequest | null>(null);
+  const [selectedVendorForStorefront, setSelectedVendorForStorefront] = useState<{ id: string; name?: string } | null>(null);
 
 
   // Active responses list
@@ -422,7 +426,14 @@ export default function ProcurementHub({ categories, sellerId, userId }: Procure
                           <div key={quote.id} className="p-3 bg-emerald-50/40 rounded-2xl border border-emerald-100/50 text-xs">
                             <div className="flex justify-between items-start mb-1">
                               <div>
-                                <strong className="text-slate-800 font-bold">{quote.seller_name}</strong>
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedVendorForStorefront({ id: quote.seller_id, name: quote.seller_name })}
+                                  className="text-slate-800 hover:text-indigo-600 font-bold hover:underline text-left cursor-pointer transition-colors"
+                                  title={`View Storefront for ${quote.seller_name}`}
+                                >
+                                  {quote.seller_name}
+                                </button>
                                 <span className="text-[10px] text-slate-400 block">Offered: {quote.offered_product}</span>
                               </div>
                               <span className="text-indigo-600 font-bold">₦{quote.price.toLocaleString()}</span>
@@ -471,6 +482,15 @@ export default function ProcurementHub({ categories, sellerId, userId }: Procure
                     title="Run Intelligent Inventory Match Score"
                   >
                     {matchingLoading ? 'Thinking...' : 'AI Stock Match'}
+                  </button>
+
+                  <button
+                    onClick={() => setSelectedShareRfq(rfq)}
+                    className="px-3 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1"
+                    title="Share RFQ to WhatsApp & Social Apps"
+                  >
+                    <Share2 className="h-3.5 w-3.5 text-indigo-600" />
+                    <span>Share</span>
                   </button>
 
                   <button
@@ -575,6 +595,30 @@ export default function ProcurementHub({ categories, sellerId, userId }: Procure
           onClose={() => setShowLogisticsModal(false)}
           initialOriginState="Lagos"
           initialDestinationState="Abuja (FCT)"
+        />
+      )}
+
+      {/* SHARE RFQ MODAL */}
+      {selectedShareRfq && (
+        <ShareModal
+          isOpen={!!selectedShareRfq}
+          onClose={() => setSelectedShareRfq(null)}
+          title={`Hospital RFQ: ${selectedShareRfq.title}`}
+          text={`Urgent Clinical Sourcing Request from ${selectedShareRfq.hospital_name || 'Healthcare Facility'} (${selectedShareRfq.location_state}): Target Budget ₦${selectedShareRfq.budget_max_ngn ? selectedShareRfq.budget_max_ngn.toLocaleString() : 'N/A'}.`}
+          url={`${window.location.origin}/procurement?rfqId=${selectedShareRfq.id}`}
+          priceFormatted={selectedShareRfq.budget_max_ngn ? `Budget: ₦${selectedShareRfq.budget_max_ngn.toLocaleString()}` : undefined}
+          category="Hospital Sourcing Request (RFQ)"
+        />
+      )}
+
+      {/* VENDOR STOREFRONT MODAL */}
+      {selectedVendorForStorefront && (
+        <VendorStorefrontModal
+          isOpen={!!selectedVendorForStorefront}
+          onClose={() => setSelectedVendorForStorefront(null)}
+          sellerId={selectedVendorForStorefront.id}
+          sellerNameFallback={selectedVendorForStorefront.name}
+          categories={categories}
         />
       )}
     </div>

@@ -17,8 +17,10 @@ import {
   Copy,
   Check,
   Building,
-  Navigation
+  Navigation,
+  Share2
 } from 'lucide-react';
+import { ShareModal } from './ShareModal';
 import { motion, AnimatePresence } from 'motion/react';
 import { NIGERIAN_STATES } from '../data';
 import { Listing, EquipmentLogisticsCategory, LogisticsQuoteBreakdown, LogisticsQuote } from '../types';
@@ -127,6 +129,7 @@ export function InterStateLogisticsEstimator({
   const [generatedQuote, setGeneratedQuote] = useState<LogisticsQuote | null>(null);
   const [copied, setCopied] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
 
   // Local fallback calculation if fetch fails
   const computeLocalFallback = (): LogisticsQuoteBreakdown => {
@@ -626,13 +629,23 @@ Recommended Vehicle: ${breakdown.recommended_vehicle}`;
                     <span>Generate Official Freight Quote & Attach</span>
                   </button>
 
-                  <button
-                    onClick={handleCopyQuoteText}
-                    className="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl py-2.5 px-4 font-bold text-xs transition-all cursor-pointer border border-slate-700 flex items-center justify-center gap-2"
-                  >
-                    {copied ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
-                    <span>{copied ? 'Copied Freight Quote to Clipboard!' : 'Copy Quote Text for Inquiry'}</span>
-                  </button>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <button
+                      onClick={handleCopyQuoteText}
+                      className="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl py-2.5 px-3 font-bold text-xs transition-all cursor-pointer border border-slate-700 flex items-center justify-center gap-1.5"
+                    >
+                      {copied ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
+                      <span>{copied ? 'Copied to Clipboard!' : 'Copy Quote Text'}</span>
+                    </button>
+
+                    <button
+                      onClick={() => setShowShareModal(true)}
+                      className="w-full bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl py-2.5 px-3 font-bold text-xs transition-all cursor-pointer shadow-xs flex items-center justify-center gap-1.5"
+                    >
+                      <Share2 className="h-4 w-4 text-cyan-300" />
+                      <span>Share Quote to Apps</span>
+                    </button>
+                  </div>
 
                   {savedSuccess && (
                     <div className="p-3 bg-emerald-950/80 border border-emerald-800 text-emerald-300 rounded-xl text-center text-xs font-mono animate-fade-in">
@@ -662,6 +675,19 @@ Recommended Vehicle: ${breakdown.recommended_vehicle}`;
       >
         {content}
       </motion.div>
+
+      {/* SHARE MODAL */}
+      {showShareModal && (
+        <ShareModal
+          isOpen={showShareModal}
+          onClose={() => setShowShareModal(false)}
+          title={`MediTrade Inter-State Heavy Logistics Quote (${originState} → ${destinationState})`}
+          text={`Inter-state freight quote for heavy medical equipment. Total Estimated Delivery & Handling: ₦${breakdown ? breakdown.total_logistics_cost_ngn.toLocaleString() : '0'}`}
+          url={`${window.location.origin}/logistics?origin=${encodeURIComponent(originState)}&dest=${encodeURIComponent(destinationState)}`}
+          priceFormatted={`₦${breakdown ? breakdown.total_logistics_cost_ngn.toLocaleString() : '0'}`}
+          category="Medical Equipment Logistics"
+        />
+      )}
     </div>
   );
 }
