@@ -1,0 +1,62 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Allow public read access to listings, sellers, rfq requests, and engineers
+    match /listings/{listingId} {
+      allow read: if true;
+      allow write: if true;
+    }
+    match /sellers/{sellerId} {
+      allow read: if true;
+      allow write: if true;
+    }
+    match /procurement_requests/{requestId} {
+      allow read: if true;
+      allow write: if true;
+    }
+    match /procurement_quotes/{quoteId} {
+      allow read: if true;
+      allow write: if true;
+    }
+    match /escrow_deals/{dealId} {
+      allow read: if true;
+      allow write: if true;
+    }
+    match /offers/{offerId} {
+      allow read: if true;
+      allow write: if true;
+    }
+    match /leads/{leadId} {
+      allow read: if true;
+      allow write: if true;
+    }
+    match /chats/{chatId} {
+      allow read: if true;
+      allow write: if true;
+      match /messages/{messageId} {
+        allow read: if true;
+        allow write: if true;
+      }
+    }
+    match /inspections/{inspectionId} {
+      allow read: if true;
+      allow write: if true;
+    }
+    match /engineers/{engineerId} {
+      allow read: if true;
+      allow write: if true;
+    }
+    match /notifications/{notificationId} {
+      allow read: if true;
+      allow write: if true;
+    }
+    match /users/{userId} {
+      allow read: if true;
+      allow write: if true;
+    }
+    match /categories/{categoryId} {
+      allow read: if true;
+      allow write: if true;
+    }
+  }
+}

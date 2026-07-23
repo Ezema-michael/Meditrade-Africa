@@ -8,7 +8,8 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import { NIGERIAN_STATES, CATEGORIES, INITIAL_SELLERS, INITIAL_LISTINGS, INITIAL_PROCUREMENT_REQUESTS, INITIAL_ENGINEERS, INITIAL_ENGINEER_REVIEWS, INITIAL_OFFERS } from "./src/data";
-import { Listing, Seller, Category, ProcurementRequest, ProcurementResponse, Report, VerificationRequest, FirestoreNotification, Lead, ChatMessage, Engineer, EngineerReview, Offer } from "./src/types";
+import { Listing, Seller, Category, ProcurementRequest, ProcurementResponse, Report, VerificationRequest, FirestoreNotification, Lead, ChatMessage, Engineer, EngineerReview, Offer, EscrowStatus, EscrowDeal, FinancingStatus, LeaseFinancingApplication } from "./src/types";
+import { collections, initializeFirestore, saveToFirestore, deleteFromFirestore } from "./src/lib/serverDb";
 import rateLimit from "express-rate-limit";
 import fs from "fs";
 import multer from "multer";
@@ -56,160 +57,30 @@ const ai = new GoogleGenAI({
   }
 });
 
-// Simulated In-Memory Database (preserving data during the active web session)
-let usersCollection = [
-  { id: 'usr-1', firebase_uid: 'f-uid-1', email: 'chidi.obi@medlink.com.ng', phone: '+2348031234567', role: 'seller', status: 'active' },
-  { id: 'usr-2', firebase_uid: 'f-uid-2', email: 'fatima@westafricamed.com', phone: '+2348123456789', role: 'seller', status: 'active' },
-  { id: 'usr-3', firebase_uid: 'f-uid-3', email: 'ezemamichael@gmail.com', phone: '+2348033334444', role: 'admin', status: 'active' },
-  { id: 'usr-4', firebase_uid: 'f-uid-4', email: 'sales@lagomsconsumables.com.ng', phone: '+2347055555123', role: 'seller', status: 'active' },
-  { id: 'usr-5', firebase_uid: 'f-uid-5', email: 'buyer@riversidememorial.org', phone: '+2348055554444', role: 'buyer', status: 'active' }
-];
-
-let sellersCollection: Seller[] = [...INITIAL_SELLERS];
-let categoriesCollection: Category[] = [...CATEGORIES];
-let listingsCollection: Listing[] = [...INITIAL_LISTINGS];
-let procurementRequestsCollection: ProcurementRequest[] = [...INITIAL_PROCUREMENT_REQUESTS];
-let procurementResponsesCollection: ProcurementResponse[] = [
-  {
-    id: 'resp-1',
-    request_id: 'req-1',
-    seller_id: 'sel-1',
-    listing_id: 'list-1',
-    price: 1350000,
-    message: 'We have 3 units of extremely clean, US-used Mindray patient monitors ready for delivery inside Abuja tomorrow. We can discount slightly if you pack all three.',
-    availability: 'Immediate delivery',
-    whatsapp_contact: '+2348031234567',
-    seller_name: 'MedLink Diagnostics Ltd',
-    offered_product: 'Mindray uMec 12 Patient Monitor',
-    created_at: '2026-05-27T10:00:00Z'
-  }
-];
-
-let favoritesCollection: { id: string; user_id: string; listing_id: string; created_at: string }[] = [];
-let reportsCollection: Report[] = [];
-let verificationRequestsCollection: VerificationRequest[] = [];
-let engineersCollection: Engineer[] = [...INITIAL_ENGINEERS];
-let engineerReviewsCollection: EngineerReview[] = [...INITIAL_ENGINEER_REVIEWS];
-let offersCollection: Offer[] = [...INITIAL_OFFERS];
-
-let inspectionRequestsCollection: any[] = [
-  {
-    id: 'insp-101',
-    listing_id: 'list-2',
-    listing_title: 'GE Voluson P8 3D/4D Ultrasound Machine',
-    listing_condition: 'foreign_used',
-    listing_price: 14500000,
-    listing_currency: 'NGN',
-    seller_id: 'sel-2',
-    seller_name: 'West Africa Medical Systems',
-    buyer_id: 'usr-5',
-    buyer_name: 'Dr. Fatima Bello',
-    buyer_phone: '+2348055554444',
-    buyer_email: 'buyer@riversidememorial.org',
-    hospital_name: 'Riverside Memorial Hospital',
-    assigned_engineer_id: 'eng-2',
-    assigned_engineer_name: 'Engr. Fatima Bello (Imaging Specialist)',
-    assigned_engineer_phone: '+2348039998877',
-    inspection_location: 'Plot 14, Victoria Island Industrial Way, Lagos',
-    scheduled_date: '2026-07-24',
-    status: 'passed',
-    notes: 'Buyer requested pre-purchase engineering audit on Tokunbo ultrasound before releasing payment.',
-    fee_amount: 85000,
-    escrow_linked: true,
-    escrow_deal_id: 'esc-102',
-    checklist: [
-      { id: 'chk-1', label: 'Transducer Crystal Element & Probe Signal Output Test', category: 'sensor_calibration', status: 'pass', measured_value: '3D/4D Array 99.4% Signal Homogeneity', notes: 'Zero crystal dropouts detected.' },
-      { id: 'chk-2', label: 'HV Generator & Power Supply Voltage Stability Check', category: 'tube_head_voltage', status: 'pass', measured_value: '220V +/- 1.5% Surge Tolerant', notes: 'Internal surge suppressors operational.' },
-      { id: 'chk-3', label: 'West Africa Power Grid Surge & UPS Handover Test', category: 'power_surge', status: 'pass', measured_value: '15 min battery hold', notes: 'UPS cutover seamless.' },
-      { id: 'chk-4', label: 'Cables, Connectors & Accessories Audit', category: 'accessories', status: 'pass', measured_value: '3 Probes + Gel Heater Present', notes: 'Convex, Linear, and Endovaginal probes included.' },
-      { id: 'chk-5', label: 'Electrical Safety Grounding & Thermal Diagnostic', category: 'safety', status: 'pass', measured_value: '<0.1 Ohm Ground Impedance', notes: 'Safe for continuous clinical operation.' }
-    ],
-    certificate_no: 'CERT-BIOMED-2026-8819',
-    engineer_verdict_notes: 'Passed complete pre-purchase calibration audit. Equipment is in pristine mechanical and electronic working order.',
-    completed_at: new Date(Date.now() - 86400000).toISOString(),
-    created_at: new Date(Date.now() - 86400000 * 2).toISOString(),
-    updated_at: new Date(Date.now() - 86400000).toISOString()
-  }
-];
-
-
-// Sourcing analytics to capture hospital search demands and patterns for administrators context
-let searchLogsCollection = [
-  { id: 'search-1', query: 'Ultrasound machine', category_id: 'cat-1', category_name: 'Ultrasound Machines', state: 'Lagos', condition: 'used', timestamp: new Date(Date.now() - 3600000 * 2).toISOString(), results_count: 3 },
-  { id: 'search-2', query: 'Mindray uMec 12', category_id: 'cat-7', category_name: 'Patient Monitors', state: 'Abuja', condition: 'used', timestamp: new Date(Date.now() - 3600000 * 5).toISOString(), results_count: 1 },
-  { id: 'search-3', query: 'Defibrillator Unit', category_id: 'cat-5', category_name: 'Theatre Equipment', state: 'Rivers', condition: 'new', timestamp: new Date(Date.now() - 3600000 * 12).toISOString(), results_count: 0 },
-  { id: 'search-4', query: 'Autoclave sterilizer', category_id: 'cat-13', category_name: 'Autoclaves & Sterilizers', state: 'Lagos', condition: 'refurbished', timestamp: new Date(Date.now() - 3600000 * 18).toISOString(), results_count: 2 },
-  { id: 'search-5', query: 'Dental Chair', category_id: 'cat-14', category_name: 'Dental Equipment', state: 'Kano', condition: 'new', timestamp: new Date(Date.now() - 3600000 * 24).toISOString(), results_count: 0 },
-  { id: 'search-6', query: 'Examination light', category_id: 'cat-8', category_name: 'Hospital Beds & Furniture', state: 'Rivers', condition: 'new', timestamp: new Date(Date.now() - 3600000 * 30).toISOString(), results_count: 0 },
-  { id: 'search-7', query: 'Philip ECG', category_id: 'cat-7', category_name: 'Patient Monitors', state: 'Kano', condition: 'used', timestamp: new Date(Date.now() - 3600000 * 36).toISOString(), results_count: 1 },
-  { id: 'search-8', query: 'GE Voluson E8', category_id: 'cat-1', category_name: 'Ultrasound Machines', state: 'Lagos', condition: 'refurbished', timestamp: new Date(Date.now() - 3600000 * 42).toISOString(), results_count: 2 },
-  { id: 'search-9', query: 'Tuttnauer autoclave', category_id: 'cat-13', category_name: 'Autoclaves & Sterilizers', state: 'Abuja', condition: 'refurbished', timestamp: new Date(Date.now() - 3600000 * 48).toISOString(), results_count: 0 },
-  { id: 'search-10', query: 'Latex Gloves surgical', category_id: 'cat-10', category_name: 'Gloves', state: 'Lagos', condition: 'new', timestamp: new Date(Date.now() - 3600000 * 54).toISOString(), results_count: 10 }
-];
-let activityLogsCollection: { id: string; actor: string; action: string; category: string; description: string; timestamp: string }[] = [
-  { id: 'act-1', actor: 'System', action: 'INIT', category: 'Database', description: 'Database and simulated nodes booted successfully.', timestamp: new Date().toISOString() }
-];
+/// Live Database Collections synced with Firestore
+let usersCollection = collections.users;
+let sellersCollection = collections.sellers;
+let categoriesCollection = collections.categories;
+let listingsCollection = collections.listings;
+let procurementRequestsCollection = collections.procurementRequests;
+let procurementResponsesCollection = collections.procurementResponses;
+let favoritesCollection = collections.favorites;
+let reportsCollection = collections.reports;
+let verificationRequestsCollection = collections.verificationRequests;
+let engineersCollection = collections.engineers;
+let engineerReviewsCollection = collections.engineerReviews;
+let offersCollection = collections.offers;
+let inspectionRequestsCollection = collections.inspections;
+let searchLogsCollection = collections.searchLogs;
+let activityLogsCollection = collections.activityLogs;
+let notificationsCollection = collections.notifications;
+let leadsCollection = collections.leads;
+let escrowDealsCollection = collections.escrowDeals;
+let financingApplicationsCollection = collections.financingApplications;
 
 let interactionLogsCollection: any[] = [
   { id: 'int-1', action_type: 'whatsapp_click', listing_id: 'list-1', listing_title: 'Mindray uMec 12 Patient Monitor', seller_id: 'sel-1', seller_name: 'MedLink Diagnostics Ltd', user_info: 'Riverside Memorial Hospital (Dr. Kalu)', timestamp: new Date(Date.now() - 3600000 * 2).toISOString() },
-  { id: 'int-2', action_type: 'call_click', listing_id: 'list-2', listing_title: 'GE Voluson P8 3D/4D Ultrasound Machine', seller_id: 'sel-2', seller_name: 'West Africa Medical Systems', user_info: 'St. Nicholas Hospital Purchaser', timestamp: new Date(Date.now() - 3600000 * 4).toISOString() },
-  { id: 'int-3', action_type: 'view_details', listing_id: 'list-3', listing_title: 'Shimadzu MobileArt Portable X-Ray', seller_id: 'sel-1', seller_name: 'MedLink Diagnostics Ltd', user_info: 'Enugu State Teaching Hospital Procurement', timestamp: new Date(Date.now() - 3600000 * 6).toISOString() },
-  { id: 'int-4', action_type: 'whatsapp_click', listing_id: 'list-4', listing_title: 'Mindray BeneVision N17 Patient Monitor', seller_id: 'sel-1', seller_name: 'MedLink Diagnostics Ltd', user_info: 'Nisa Garki Hospital Abuja', timestamp: new Date(Date.now() - 3600000 * 10).toISOString() },
-  { id: 'int-5', action_type: 'rfq_submit', listing_id: 'list-1', listing_title: 'Patient Monitor Supply RFQ', seller_id: 'sel-1', seller_name: 'MedLink Diagnostics Ltd', user_info: 'Federal Medical Centre Jabi', timestamp: new Date(Date.now() - 3600000 * 15).toISOString() }
-];
-
-let notificationsCollection: FirestoreNotification[] = [
-  {
-    id: 'notif-1',
-    user_id: 'usr-1',
-    type: 'listing_approved',
-    title: 'Listing Approved!',
-    message: 'Your listing "Mindray uMec 12 Patient Monitor" has been verified by our clinical desk and is now live.',
-    read: false,
-    created_at: new Date(Date.now() - 3600000 * 4).toISOString()
-  },
-  {
-    id: 'notif-2',
-    user_id: 'usr-3',
-    type: 'admin_review',
-    title: 'New Listing Pending Review',
-    message: 'Tuttnauer tabletop autoclave listing uploaded by MedLink requires verification.',
-    read: false,
-    created_at: new Date().toISOString()
-  }
-];
-
-let leadsCollection: Lead[] = [
-  {
-    id: 'lead-1',
-    seller_id: 'sel-1', // MedLink Diagnostics Ltd
-    buyer_id: 'usr-5', // Riverside Memorial Hospital
-    buyer_name: 'Riverside Memorial Hospital',
-    buyer_contact: 'buyer@riversidememorial.org (+2348055554444)',
-    title: 'Mindray uMec 12 Patient Monitor',
-    type: 'rfq_offer',
-    source_id: 'req-1',
-    status: 'discussion',
-    notes: 'Hospital purchaser Fatima is interested in our 6-month warranty and rapid Abuja courier dispatch.',
-    price_offered: 1350000,
-    last_activity_at: new Date(Date.now() - 1200000).toISOString(),
-    created_at: new Date(Date.now() - 3600000 * 2).toISOString()
-  },
-  {
-    id: 'lead-2',
-    seller_id: 'sel-1',
-    buyer_id: 'usr-5',
-    buyer_name: 'Riverside Memorial Hospital',
-    buyer_contact: 'buyer@riversidememorial.org',
-    title: 'General Autoclave Sourcing Inquiry',
-    type: 'listing_inquiry',
-    source_id: 'list-3',
-    status: 'new',
-    notes: 'Buyer requested detailed brochure and technical calibration parameters.',
-    price_offered: 1100000,
-    last_activity_at: new Date(Date.now() - 7200000).toISOString(),
-    created_at: new Date(Date.now() - 7200000).toISOString()
-  }
+  { id: 'int-2', action_type: 'call_click', listing_id: 'list-2', listing_title: 'GE Voluson P8 3D/4D Ultrasound Machine', seller_id: 'sel-2', seller_name: 'West Africa Medical Systems', user_info: 'St. Nicholas Hospital Purchaser', timestamp: new Date(Date.now() - 3600000 * 4).toISOString() }
 ];
 
 let chatMessagesCollection: ChatMessage[] = [
@@ -220,89 +91,6 @@ let chatMessagesCollection: ChatMessage[] = [
     sender_name: 'MedLink Diagnostics Ltd (Chidi Obi)',
     message: 'Hello, we noticed your sourcing request for patient monitors. We have 3 units of extremely clean, US-used Mindray patient monitors ready for delivery inside Abuja tomorrow. We can discount slightly if you pack all three.',
     created_at: new Date(Date.now() - 3600000 * 2).toISOString()
-  },
-  {
-    id: 'msg-2',
-    lead_id: 'lead-1',
-    sender_id: 'usr-5',
-    sender_name: 'Riverside Memorial Hospital (Fatima)',
-    message: 'Thanks for reaching out Chidi. Do you offer warranty coverage on these used monitors?',
-    created_at: new Date(Date.now() - 1800000).toISOString()
-  },
-  {
-    id: 'msg-3',
-    lead_id: 'lead-1',
-    sender_id: 'usr-1',
-    sender_name: 'MedLink Diagnostics Ltd (Chidi Obi)',
-    message: 'Yes, we provide 6 months dealer warranty on parts and servicing. We also have a calibration lab in Lagos.',
-    created_at: new Date(Date.now() - 1200000).toISOString()
-  }
-];
-
-let escrowDealsCollection: any[] = [
-  {
-    id: 'esc-101',
-    listing_id: 'list-1',
-    listing_title: 'Mindray uMec 12 Patient Monitor',
-    buyer_id: 'usr-5',
-    buyer_name: 'Riverside Memorial Hospital',
-    buyer_email: 'buyer@riversidememorial.org',
-    seller_id: 'sel-1',
-    seller_name: 'MedLink Diagnostics Ltd',
-    amount: 1350000,
-    currency: 'NGN',
-    escrow_fee: 27000,
-    status: 'inspected_approved',
-    assigned_engineer_id: 'eng-1',
-    assigned_engineer_name: 'Engr. Emeka Okafor (Biomedical Lead)',
-    engineer_notes: 'Full functional test complete. ECG sensors, NIBP cuff, and SPO2 probe calibrated to ISO standards.',
-    engineer_approved: true,
-    payment_reference: 'ESC-2026-90812',
-    delivery_tracking_no: 'GIG-MED-9921',
-    created_at: new Date(Date.now() - 86400000 * 3).toISOString(),
-    updated_at: new Date(Date.now() - 3600000 * 4).toISOString()
-  },
-  {
-    id: 'esc-102',
-    listing_id: 'list-2',
-    listing_title: 'GE Voluson P8 3D/4D Ultrasound Machine',
-    buyer_id: 'usr-5',
-    buyer_name: 'St. Nicholas Hospital Purchaser',
-    buyer_email: 'procurement@stnicholas.ng',
-    seller_id: 'sel-2',
-    seller_name: 'West Africa Medical Systems',
-    amount: 14500000,
-    currency: 'NGN',
-    escrow_fee: 290000,
-    status: 'funds_deposited',
-    assigned_engineer_id: 'eng-2',
-    assigned_engineer_name: 'Engr. Fatima Bello (Imaging Specialist)',
-    payment_reference: 'ESC-2026-44120',
-    delivery_tracking_no: 'DHL-NIG-8801',
-    created_at: new Date(Date.now() - 86400000).toISOString(),
-    updated_at: new Date(Date.now() - 3600000 * 2).toISOString()
-  },
-  {
-    id: 'esc-103',
-    listing_id: 'list-3',
-    listing_title: 'Shimadzu MobileArt Portable X-Ray',
-    buyer_id: 'usr-5',
-    buyer_name: 'Enugu State Teaching Hospital',
-    buyer_email: 'purchasing@esth.gov.ng',
-    seller_id: 'sel-1',
-    seller_name: 'MedLink Diagnostics Ltd',
-    amount: 11000000,
-    currency: 'NGN',
-    escrow_fee: 220000,
-    status: 'funds_released',
-    assigned_engineer_id: 'eng-1',
-    assigned_engineer_name: 'Engr. Emeka Okafor',
-    engineer_notes: 'X-Ray tube radiation output verified and safe.',
-    engineer_approved: true,
-    payment_reference: 'ESC-2026-11029',
-    delivery_tracking_no: 'MED-LOG-5510',
-    created_at: new Date(Date.now() - 86400000 * 7).toISOString(),
-    updated_at: new Date(Date.now() - 86400000 * 2).toISOString()
   }
 ];
 
@@ -326,73 +114,6 @@ let financingPartnersCollection: any[] = [
     min_down_payment_pct: 15,
     description: 'Low interest medical equipment financing with rapid 48-hour credit pre-qualification for verified CAC entities.',
     badge: 'Fast 48hr Approval'
-  },
-  {
-    id: 'fin-partner-3',
-    name: 'GTBank Medical Equipment Leasing',
-    logo_url: 'https://images.unsplash.com/photo-1507679799987-c73779587ccf?w=120',
-    interest_rate_annual: 17.5,
-    max_tenure_months: 24,
-    min_down_payment_pct: 10,
-    description: 'Asset-backed leasing using equipment as collateral. No additional real estate collateral required for items up to ₦50M.',
-    badge: 'No Collateral Required'
-  },
-  {
-    id: 'fin-partner-4',
-    name: 'Sahel Capital Health Infrastructure Fund',
-    logo_url: 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=120',
-    interest_rate_annual: 14.0,
-    max_tenure_months: 48,
-    min_down_payment_pct: 20,
-    description: 'Impact investment fund focused on expanding maternal and diagnostic imaging infrastructure across Sub-Saharan Africa.',
-    badge: 'Impact Fund Special Rate'
-  }
-];
-
-let financingApplicationsCollection: any[] = [
-  {
-    id: 'app-901',
-    buyer_id: 'usr-5',
-    hospital_name: 'Riverside Memorial Hospital Ltd',
-    contact_email: 'buyer@riversidememorial.org',
-    contact_phone: '+2348055554444',
-    equipment_id: 'list-2',
-    equipment_title: 'GE Voluson P8 3D/4D Ultrasound Machine',
-    equipment_price: 14500000,
-    down_payment: 2900000,
-    financed_amount: 11600000,
-    tenure_months: 24,
-    monthly_repayment: 574200,
-    partner_bank_id: 'fin-partner-2',
-    partner_bank_name: 'Sterling Bank HealthCare Lease',
-    cac_registration: 'RC-998231',
-    medical_license: 'MDCN-HOSP-2024-88',
-    monthly_patient_volume: 450,
-    status: 'pre_approved',
-    approval_notes: 'Pre-approval granted subject to physical site inspection of the radiology bay at Riverside Memorial.',
-    created_at: new Date(Date.now() - 86400000 * 2).toISOString()
-  },
-  {
-    id: 'app-902',
-    buyer_id: 'usr-5',
-    hospital_name: 'Enugu State Teaching Hospital Procurement',
-    contact_email: 'purchasing@esth.gov.ng',
-    contact_phone: '+2348033332211',
-    equipment_id: 'list-4',
-    equipment_title: 'Mindray BeneVision N17 Patient Monitor System',
-    equipment_price: 3800000,
-    down_payment: 380000,
-    financed_amount: 3420000,
-    tenure_months: 12,
-    monthly_repayment: 311000,
-    partner_bank_id: 'fin-partner-1',
-    partner_bank_name: 'Access Bank MedPay Asset Finance',
-    cac_registration: 'ESTH-GOV-001',
-    medical_license: 'MDCN-GOV-9012',
-    monthly_patient_volume: 1200,
-    status: 'submitted',
-    approval_notes: 'Underwriting desk reviewing government budget line allocation.',
-    created_at: new Date(Date.now() - 3600000 * 8).toISOString()
   }
 ];
 
@@ -572,6 +293,7 @@ app.post("/api/auth/sync-user", (req, res) => {
       status: 'active'
     };
     usersCollection.push(user);
+    saveToFirestore('users', user.id, user);
     
     // Also bootstrap seller account if role is seller
     if (role === 'seller') {
@@ -592,6 +314,7 @@ app.post("/api/auth/sync-user", (req, res) => {
         created_at: new Date().toISOString()
       };
       sellersCollection.push(newSeller);
+      saveToFirestore('sellers', newSeller.id, newSeller);
     }
     
     logActivity(email, 'REGISTER', 'User', `Registered new healthcare ${role || 'seller'} account.`);
@@ -735,10 +458,11 @@ app.post("/api/listings", requireAuth, (req: any, res: any) => {
   };
 
   listingsCollection.unshift(newListing);
+  saveToFirestore('listings', newListing.id, newListing);
   logActivity(seller.business_name, 'CREATE_LISTING', 'Listings', `Created clinical listing: ${sanitizedTitle}`);
   
   // Send simulated Firestore notification to administrative review board
-  notificationsCollection.unshift({
+  const notif = {
     id: `notif-${Date.now()}`,
     user_id: 'usr-3', // Admin recipient
     type: 'admin_review',
@@ -746,7 +470,9 @@ app.post("/api/listings", requireAuth, (req: any, res: any) => {
     message: `New equipment listing "${sanitizedTitle}" requires clinical verification by admin.`,
     read: false,
     created_at: new Date().toISOString()
-  });
+  };
+  notificationsCollection.unshift(notif);
+  saveToFirestore('notifications', notif.id, notif);
 
   res.status(210).json(newListing);
 });
@@ -787,6 +513,7 @@ app.patch("/api/listings/:id", requireAuth, (req: any, res: any) => {
     updated_at: new Date().toISOString()
   };
 
+  saveToFirestore('listings', id, listingsCollection[index]);
   res.json(listingsCollection[index]);
 });
 
@@ -814,6 +541,7 @@ app.delete("/api/listings/:id", requireAuth, (req: any, res: any) => {
 
   logActivity(req.user.email, 'DELETE_LISTING', 'Listings', `Deleted listing: ${listing.title}`);
   listingsCollection.splice(index, 1);
+  deleteFromFirestore('listings', id);
   res.json({ success: true, message: "Listing deleted successfully" });
 });
 
@@ -1154,6 +882,7 @@ app.patch("/api/admin/listings/:id/approve", (req, res) => {
   const listing = listingsCollection.find(l => l.id === req.params.id);
   if (!listing) return res.status(404).json({ error: "Listing not found" });
   listing.status = 'published';
+  saveToFirestore('listings', listing.id, listing);
   logActivity('Admin', 'APPROVE_LISTING', 'Moderation', `Approved "published" status for: ${listing.title}`);
 
   // Find associated seller
@@ -1161,7 +890,7 @@ app.patch("/api/admin/listings/:id/approve", (req, res) => {
   const sellerUserId = seller ? seller.user_id : 'usr-1';
 
   // 1. Notify the Seller
-  notificationsCollection.unshift({
+  const n1 = {
     id: `notif-${Date.now()}-sel-appr`,
     user_id: sellerUserId,
     type: 'listing_approved',
@@ -1169,10 +898,12 @@ app.patch("/api/admin/listings/:id/approve", (req, res) => {
     message: `Your medical equipment listing "${listing.title}" passed clinical verification and is live.`,
     read: false,
     created_at: new Date().toISOString()
-  });
+  };
+  notificationsCollection.unshift(n1);
+  saveToFirestore('notifications', n1.id, n1);
 
   // 2. Notify clinical buyers (usr-5) that new verified inventory is available
-  notificationsCollection.unshift({
+  const n2 = {
     id: `notif-${Date.now()}-byr-appr`,
     user_id: 'usr-5', 
     type: 'new_equipment_alert',
@@ -1180,7 +911,9 @@ app.patch("/api/admin/listings/:id/approve", (req, res) => {
     message: `Verified dealer "${listing.seller_name || 'Dealer'}" has listed: "${listing.title}" for ₦${Number(listing.price).toLocaleString()}.`,
     read: false,
     created_at: new Date().toISOString()
-  });
+  };
+  notificationsCollection.unshift(n2);
+  saveToFirestore('notifications', n2.id, n2);
 
   res.json(listing);
 });
@@ -1190,6 +923,7 @@ app.patch("/api/admin/listings/:id/reject", (req, res) => {
   const listing = listingsCollection.find(l => l.id === req.params.id);
   if (!listing) return res.status(404).json({ error: "Listing not found" });
   listing.status = 'rejected';
+  saveToFirestore('listings', listing.id, listing);
   logActivity('Admin', 'REJECT_LISTING', 'Moderation', `Rejected listing submission: ${listing.title}`);
 
   // Find associated seller
@@ -1197,7 +931,7 @@ app.patch("/api/admin/listings/:id/reject", (req, res) => {
   const sellerUserId = seller ? seller.user_id : 'usr-1';
 
   // Notify Seller about rejection
-  notificationsCollection.unshift({
+  const n = {
     id: `notif-${Date.now()}-sel-rej`,
     user_id: sellerUserId,
     type: 'listing_rejected',
@@ -1205,7 +939,9 @@ app.patch("/api/admin/listings/:id/reject", (req, res) => {
     message: `Your listing "${listing.title}" was rejected due to missing technical parameters or price discrepancies.`,
     read: false,
     created_at: new Date().toISOString()
-  });
+  };
+  notificationsCollection.unshift(n);
+  saveToFirestore('notifications', n.id, n);
 
   res.json(listing);
 });
@@ -1221,20 +957,27 @@ app.patch("/api/admin/sellers/:id/verify", (req, res) => {
   if (!seller) return res.status(404).json({ error: "Seller profile not found." });
   
   seller.verification_status = 'verified';
+  saveToFirestore('sellers', seller.id, seller);
   
   // Also status of their verification request record
   const vReq = verificationRequestsCollection.find(vr => vr.seller_id === seller.id && vr.status === 'pending');
-  if (vReq) vReq.status = 'approved';
+  if (vReq) {
+    vReq.status = 'approved';
+    saveToFirestore('verification_requests', vReq.id, vReq);
+  }
 
   // Mark all their listings as verified seller listings dynamically
   listingsCollection.forEach(l => {
-    if (l.seller_id === seller.id) l.seller_verified = true;
+    if (l.seller_id === seller.id) {
+      l.seller_verified = true;
+      saveToFirestore('listings', l.id, l);
+    }
   });
 
   logActivity('Admin', 'VERIFY_DEALER', 'KYC', `Corporate registration verified for ${seller.business_name}`);
 
   // Notify Seller of their approved KYC verification status
-  notificationsCollection.unshift({
+  const n1 = {
     id: `notif-${Date.now()}-sel-kyc`,
     user_id: seller.user_id || 'usr-1',
     type: 'kyc_verified',
@@ -1242,10 +985,12 @@ app.patch("/api/admin/sellers/:id/verify", (req, res) => {
     message: `Your business CAC document for "${seller.business_name}" is approved. You received the Verified Seller Shield!`,
     read: false,
     created_at: new Date().toISOString()
-  });
+  };
+  notificationsCollection.unshift(n1);
+  saveToFirestore('notifications', n1.id, n1);
 
   // Notify Buyers of new vetted dealer trusted sourcing alternative
-  notificationsCollection.unshift({
+  const n2 = {
     id: `notif-${Date.now()}-byr-kyc`,
     user_id: 'usr-5', 
     type: 'supplier_vetted',
@@ -1253,7 +998,9 @@ app.patch("/api/admin/sellers/:id/verify", (req, res) => {
     message: `Dealer "${seller.business_name}" is now fully CAC verified. Sourcing carries full warranty support.`,
     read: false,
     created_at: new Date().toISOString()
-  });
+  };
+  notificationsCollection.unshift(n2);
+  saveToFirestore('notifications', n2.id, n2);
 
   res.json(seller);
 });
@@ -1384,15 +1131,22 @@ app.patch("/api/admin/vendors/:id/status", (req, res) => {
   if (status) {
     seller.status = status;
     const u = usersCollection.find(usr => usr.id === seller.user_id);
-    if (u) u.status = status;
+    if (u) {
+      u.status = status;
+      saveToFirestore('users', u.id, u);
+    }
   }
 
   if (verification_status === 'verified') {
     listingsCollection.forEach(l => {
-      if (l.seller_id === seller.id) l.seller_verified = true;
+      if (l.seller_id === seller.id) {
+        l.seller_verified = true;
+        saveToFirestore('listings', l.id, l);
+      }
     });
   }
 
+  saveToFirestore('sellers', seller.id, seller);
   logActivity('Admin', 'MANAGE_VENDOR', 'AdminOps', `Updated vendor "${seller.business_name}" (Status: ${seller.status || 'active'}, Verification: ${seller.verification_status})`);
   res.json(seller);
 });
@@ -1403,6 +1157,7 @@ app.delete("/api/admin/vendors/:id", (req, res) => {
   if (index === -1) return res.status(404).json({ error: "Vendor not found" });
 
   const deleted = sellersCollection.splice(index, 1)[0];
+  deleteFromFirestore('sellers', deleted.id);
   logActivity('Admin', 'DELETE_VENDOR', 'AdminOps', `Removed vendor store profile: ${deleted.business_name}`);
   res.json({ success: true, deleted });
 });
@@ -1450,6 +1205,7 @@ app.patch("/api/admin/equipments/:id", (req, res) => {
     updated_at: new Date().toISOString()
   };
   listingsCollection[index] = updated;
+  saveToFirestore('listings', updated.id, updated);
 
   logActivity('Admin', 'EDIT_EQUIPMENT', 'AdminOps', `Admin updated equipment: ${updated.title} (Status: ${updated.status})`);
   res.json(updated);
@@ -1461,6 +1217,7 @@ app.delete("/api/admin/equipments/:id", (req, res) => {
   if (index === -1) return res.status(404).json({ error: "Equipment not found" });
 
   const deleted = listingsCollection.splice(index, 1)[0];
+  deleteFromFirestore('listings', deleted.id);
   logActivity('Admin', 'DELETE_EQUIPMENT', 'AdminOps', `Admin deleted equipment: ${deleted.title}`);
   res.json({ success: true, deleted });
 });
@@ -1965,7 +1722,7 @@ app.post("/api/escrow/create", (req, res) => {
     amount: Number(amount),
     currency: listing.currency || 'NGN',
     escrow_fee: Math.round(Number(amount) * 0.02), // 2% escrow protection fee
-    status: 'initiated',
+    status: 'initiated' as EscrowStatus,
     assigned_engineer_id: engineer?.id || 'eng-1',
     assigned_engineer_name: engineer?.name ? `${engineer.name} (${engineer.specialty})` : 'Engr. Emeka Okafor (Biomedical Lead)',
     payment_reference: `ESC-2026-${Math.floor(10000 + Math.random() * 90000)}`,
@@ -1974,6 +1731,7 @@ app.post("/api/escrow/create", (req, res) => {
   };
 
   escrowDealsCollection.unshift(newDeal);
+  saveToFirestore('escrow_deals', newDeal.id, newDeal);
   logActivity(buyer_name || 'Buyer', 'CREATE_ESCROW', 'Escrow', `Created escrow deal for "${listing.title}" (Amount: ₦${Number(amount).toLocaleString()})`);
 
   // Notify seller
@@ -2164,12 +1922,13 @@ app.post("/api/financing/apply", (req, res) => {
     cac_registration: cac_registration || 'RC-PENDING',
     medical_license: medical_license || 'MDCN-PENDING',
     monthly_patient_volume: Number(monthly_patient_volume) || 300,
-    status: 'submitted',
+    status: 'submitted' as FinancingStatus,
     approval_notes: 'Underwriting desk created application dossier for bank risk review.',
     created_at: new Date().toISOString()
   };
 
   financingApplicationsCollection.unshift(newApp);
+  saveToFirestore('financing_applications', newApp.id, newApp);
   logActivity(hospital_name, 'APPLY_FINANCING', 'LeaseFinancing', `Submitted lease application for "${equipment.title}" with ${partner?.name}`);
 
   notificationsCollection.unshift({
@@ -3262,6 +3021,9 @@ app.get("/api/logistics/quotes", (req, res) => {
 
 
 async function startServer() {
+  // Initialize Firestore sync
+  await initializeFirestore();
+
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },

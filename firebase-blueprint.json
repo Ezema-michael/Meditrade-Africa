@@ -1,0 +1,230 @@
+{
+  "entities": {
+    "users": {
+      "fields": {
+        "id": { "type": "string" },
+        "email": { "type": "string" },
+        "full_name": { "type": "string" },
+        "role": { "type": "string" },
+        "organization": { "type": "string" },
+        "phone_number": { "type": "string" },
+        "is_verified": { "type": "boolean" },
+        "created_at": { "type": "string" }
+      },
+      "security": {
+        "read": "request.auth != null && request.auth.uid == resource.id",
+        "write": "request.auth != null && request.auth.uid == resource.id"
+      }
+    },
+    "sellers": {
+      "fields": {
+        "id": { "type": "string" },
+        "user_id": { "type": "string" },
+        "business_name": { "type": "string" },
+        "contact_name": { "type": "string" },
+        "phone_number": { "type": "string" },
+        "whatsapp_number": { "type": "string" },
+        "email": { "type": "string" },
+        "state": { "type": "string" },
+        "city": { "type": "string" },
+        "address": { "type": "string" },
+        "cac_number": { "type": "string" },
+        "verification_status": { "type": "string" },
+        "subscription_plan": { "type": "string" },
+        "active_listings_count": { "type": "number" },
+        "rating_placeholder": { "type": "number" },
+        "created_at": { "type": "string" }
+      },
+      "security": {
+        "read": "true",
+        "write": "request.auth != null && (request.auth.uid == resource.data.user_id || request.auth.uid == request.resource.data.user_id)"
+      }
+    },
+    "listings": {
+      "fields": {
+        "id": { "type": "string" },
+        "seller_id": { "type": "string" },
+        "seller_name": { "type": "string" },
+        "seller_verified": { "type": "boolean" },
+        "title": { "type": "string" },
+        "category_id": { "type": "string" },
+        "subcategory_id": { "type": "string" },
+        "price": { "type": "number" },
+        "currency": { "type": "string" },
+        "condition": { "type": "string" },
+        "brand": { "type": "string" },
+        "model": { "type": "string" },
+        "year": { "type": "number" },
+        "location": { "type": "string" },
+        "city": { "type": "string" },
+        "state": { "type": "string" },
+        "description": { "type": "string" },
+        "specifications": { "type": "map" },
+        "status": { "type": "string" },
+        "featured": { "type": "boolean" },
+        "views_count": { "type": "number" },
+        "whatsapp_clicks": { "type": "number" },
+        "images": { "type": "array" },
+        "created_at": { "type": "string text" },
+        "updated_at": { "type": "string" }
+      },
+      "security": {
+        "read": "true",
+        "write": "request.auth != null"
+      }
+    },
+    "procurement_requests": {
+      "fields": {
+        "id": { "type": "string" },
+        "buyer_id": { "type": "string" },
+        "buyer_name": { "type": "string" },
+        "title": { "type": "string" },
+        "category_id": { "type": "string" },
+        "quantity": { "type": "number" },
+        "target_price": { "type": "number" },
+        "destination_state": { "type": "string" },
+        "urgency": { "type": "string" },
+        "status": { "type": "string" },
+        "description": { "type": "string" },
+        "created_at": { "type": "string" }
+      },
+      "security": {
+        "read": "true",
+        "write": "request.auth != null"
+      }
+    },
+    "procurement_quotes": {
+      "fields": {
+        "id": { "type": "string" },
+        "rfq_id": { "type": "string" },
+        "seller_id": { "type": "string" },
+        "seller_name": { "type": "string" },
+        "offered_product": { "type": "string" },
+        "price": { "type": "number" },
+        "delivery_days": { "type": "number" },
+        "warranty": { "type": "string" },
+        "notes": { "type": "string" },
+        "status": { "type": "string" },
+        "created_at": { "type": "string" }
+      },
+      "security": {
+        "read": "true",
+        "write": "request.auth != null"
+      }
+    },
+    "escrow_deals": {
+      "fields": {
+        "id": { "type": "string" },
+        "rfq_id": { "type": "string" },
+        "listing_id": { "type": "string" },
+        "title": { "type": "string" },
+        "buyer_id": { "type": "string" },
+        "buyer_name": { "type": "string" },
+        "seller_id": { "type": "string" },
+        "seller_name": { "type": "string" },
+        "amount": { "type": "number" },
+        "fee": { "type": "number" },
+        "total": { "type": "number" },
+        "status": { "type": "string" },
+        "inspection_type": { "type": "string" },
+        "engineer_id": { "type": "string" },
+        "engineer_name": { "type": "string" },
+        "engineer_status": { "type": "string" },
+        "tracking_code": { "type": "string" },
+        "created_at": { "type": "string" },
+        "updated_at": { "type": "string" }
+      },
+      "security": {
+        "read": "true",
+        "write": "request.auth != null"
+      }
+    },
+    "offers": {
+      "fields": {
+        "id": { "type": "string" },
+        "listing_id": { "type": "string" },
+        "buyer_id": { "type": "string" },
+        "buyer_name": { "type": "string" },
+        "seller_id": { "type": "string" },
+        "offer_amount": { "type": "number" },
+        "currency": { "type": "string" },
+        "status": { "type": "string" },
+        "created_at": { "type": "string" }
+      },
+      "security": {
+        "read": "true",
+        "write": "request.auth != null"
+      }
+    },
+    "leads": {
+      "fields": {
+        "id": { "type": "string" },
+        "user_id": { "type": "string" },
+        "listing_id": { "type": "string" },
+        "buyer_name": { "type": "string" },
+        "buyer_email": { "type": "string" },
+        "buyer_phone": { "type": "string" },
+        "organization": { "type": "string" },
+        "message": { "type": "string" },
+        "status": { "type": "string" },
+        "created_at": { "type": "string" }
+      },
+      "security": {
+        "read": "true",
+        "write": "true"
+      }
+    },
+    "inspections": {
+      "fields": {
+        "id": { "type": "string" },
+        "listing_id": { "type": "string" },
+        "requester_id": { "type": "string" },
+        "engineer_id": { "type": "string" },
+        "engineer_name": { "type": "string" },
+        "status": { "type": "string" },
+        "scheduled_date": { "type": "string" },
+        "location": { "type": "string" },
+        "report": { "type": "map" },
+        "created_at": { "type": "string" }
+      },
+      "security": {
+        "read": "true",
+        "write": "true"
+      }
+    },
+    "engineers": {
+      "fields": {
+        "id": { "type": "string" },
+        "full_name": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "location_state": { "type": "string" },
+        "specialization": { "type": "string" },
+        "cert_number": { "type": "string" },
+        "rating": { "type": "number" },
+        "completed_audits": { "type": "number" },
+        "hourly_rate": { "type": "number" },
+        "verified": { "type": "boolean" }
+      },
+      "security": {
+        "read": "true",
+        "write": "true"
+      }
+    },
+    "notifications": {
+      "fields": {
+        "id": { "type": "string" },
+        "user_id": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "read": { "type": "boolean" },
+        "timestamp": { "type": "string" },
+        "link": { "type": "string" }
+      },
+      "security": {
+        "read": "true",
+        "write": "true"
+      }
+    }
+  }
+}
