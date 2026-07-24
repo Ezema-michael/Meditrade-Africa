@@ -12,7 +12,7 @@
 * Interactive **Vendor Storefront Modals** detailing corporate verification badges, CAC registration numbers, rating metrics, and full inventory.
 
 ### 🔒 2. Escrow Payment & Milestone Protection
-* Fully integrated milestone escrow engine protecting hospital procurement funds.
+* Milestone escrow engine protecting hospital procurement funds.
 * **Escrow Workflow**: Fund Deposit ➔ Biomedical Inspection & Sign-off ➔ Dispatch & Tracking ➔ Final Fund Release to Vendor.
 * Automated dispute resolution and admin escalation workflow.
 
@@ -33,87 +33,75 @@
 * Route-specific transport fee estimator calculating fragile handling, shock-absorbent packaging, transit insurance, and distance matrix across Nigerian states.
 
 ### 🤖 7. Gemini AI Diagnostic Engine
-* Automated equipment spec sheet extraction from images or unformatted text using Google Gemini (`@google/genai`).
+* Automated equipment spec sheet extraction from raw WhatsApp trading text using Google Gemini (`@google/genai`).
 * AI category auto-classification and description enhancement.
-* Side-by-side technical device comparison engine for clinical decision-making.
+* Side-by-side technical device comparison engine (`gemini-3.6-flash`) for clinical decision-making.
+
+---
+
+## 🚦 System Architecture & Integration Status
+
+### Live Production Integrations
+* **Firestore Authoritative Database**: Persistent cloud data storage backed by Firebase Firestore (`firebase-applet-config.json` & `firebase-blueprint.json`) with automated seeding and live state sync.
+* **Firebase Authentication & RBAC**: Token verification via Firebase Admin SDK with role and ownership checks (`requireAuth`, `requireRole`, `requireAdmin`).
+* **Google Gemini AI Engine**: `@google/genai` SDK using `gemini-3.5-flash` and `gemini-3.6-flash` for automated text extraction, description enhancement, category detection, and side-by-side device comparison.
+* **Zod API Validation**: Comprehensive runtime schema validation on all POST/PATCH/DELETE request payloads (`src/lib/validation.ts`).
+* **Structured Audit Logging**: Event activity logging tracking regulatory, escrow, and trading actions (`src/lib/auditLogger.ts`).
+* **Secure File Uploads**: Disk-based upload pipeline with file type filtering and 50MB size restrictions.
+* **CI/CD Pipeline**: GitHub Actions workflow (`/.github/workflows/ci.yml`) performing static type checking (`tsc --noEmit`) and testing (`vitest`).
+
+### Prototype & Simulated Integrations
+* **Bank Escrow Disbursal**: Payment gateway collection and bank disbursal triggers are simulated via structured reference keys (`ESC-2026-*`) and milestone state updates.
+* **Lease Underwriting Desk**: Bank risk evaluation scorecards use deterministic financial models simulating bank underwriting decisions.
+* **GPS Fleet Tracking**: Inter-state waybill logistics calculations use distance matrix tables simulating real-time freight carrier quotes.
 
 ---
 
 ## 🛠️ Tech Stack
 
-* **Frontend**: React 18, TypeScript, Vite, Tailwind CSS, Lucide React Icons, Motion animations.
-* **Backend**: Node.js, Express (`server.ts`) with Vite Development Middleware.
-* **Database & Persistence**: Firebase Firestore (`firebase-applet-config.json` & `firebase-blueprint.json`) for persistent cloud storage, paired with high-speed server state.
+* **Frontend**: React 19, TypeScript, Vite, Tailwind CSS, Lucide React Icons, Motion animations.
+* **Backend**: Node.js, Express (`server.ts`) with modular route handlers in `src/routes/`.
+* **Database & Security**: Firebase Firestore & Firebase Auth, with `firestore.rules`.
+* **Validation & Logging**: Zod, `express-rate-limit`, structured JSON audit logging.
 * **AI Integration**: Google Gemini SDK (`@google/genai`).
-
----
-
-## 🚀 Getting Started
-
-### Prerequisites
-* Node.js v18 or higher
-* npm or bun
-
-### Installation
-
-1. Install dependencies:
-   ```bash
-   npm install
-   ```
-
-2. Configure Environment Variables in `.env`:
-   ```env
-   GEMINI_API_KEY=your_gemini_api_key
-   ```
-
-3. Run Development Server:
-   ```bash
-   npm run dev
-   ```
-   The application will boot on `http://localhost:3000`.
-
----
-
-## 📦 Building for Production
-
-To create an optimized production build:
-
-```bash
-npm run build
-```
-
-To start the production server:
-
-```bash
-npm run start
-```
 
 ---
 
 ## 📁 Directory Structure
 
 ```
-├── server.ts                       # Main Express application & API proxy routes
+├── server.ts                       # Express application entrypoint & Vite middleware
 ├── firebase-applet-config.json     # Firebase project configuration
 ├── firebase-blueprint.json         # Firestore schema blueprint
 ├── firestore.rules                 # Firestore security rules
+├── .github/workflows/ci.yml        # CI pipeline for type checking and testing
 ├── src/
 │   ├── App.tsx                     # Primary layout & application state router
 │   ├── data.ts                     # Initial Nigerian states, categories, and seed data
 │   ├── types.ts                    # Global TypeScript interfaces & enums
 │   ├── lib/
+│   │   ├── auditLogger.ts          # Centralized structured audit logging engine
+│   │   ├── validation.ts           # Zod schemas & Express validation middleware
 │   │   ├── serverDb.ts             # Firestore initialization & live collection sync
 │   │   └── firebase.ts             # Client-side Firebase configuration
-│   └── components/
-│       ├── ListingCard.tsx         # Product listing card component
-│       ├── VendorDashboard.tsx     # Dealer inventory management & analytics
-│       ├── ProcurementHub.tsx      # Hospital RFQ request & quote submission
-│       ├── EscrowFinancingPortal.tsx# Escrow deposit, dispatch & lease portal
-│       ├── EngineersDashboard.tsx  # Biomedical engineer audit & certificate hub
-│       ├── VendorStorefrontModal.tsx# Public vendor store view
-│       ├── InterStateLogisticsEstimator.tsx # Transport cost calculator
-│       └── AdminPanel.tsx          # System administration & moderation desk
-└── metadata.json                   # App manifest and permissions
+│   ├── server/
+│   │   ├── middleware.ts           # Express auth, rate limiters, multer upload engine
+│   │   └── state.ts                # Centralized state re-exports
+│   ├── routes/
+│   │   ├── auth.ts                 # Auth sync & user profile endpoints
+│   │   ├── upload.ts               # File & media upload routes
+│   │   ├── listings.ts             # Equipment CRUD, search, reporting
+│   │   ├── sellers.ts              # Vendor stores & CAC verification
+│   │   ├── procurement.ts          # Hospital RFQs & dealer quotes
+│   │   ├── offers.ts               # Direct offer submission & CRM leads/chats
+│   │   ├── escrow.ts               # Escrow agreements & milestone releases
+│   │   ├── financing.ts            # Lease financing applications
+│   │   ├── engineers.ts            # Biomedical directory & pre-purchase audits
+│   │   ├── logistics.ts            # Inter-state freight cost estimator
+│   │   ├── ai.ts                   # Gemini AI extraction & device comparison
+│   │   └── admin.ts                # Admin dashboard, vendor moderation & analytics
+│   └── components/                 # Frontend UI components
+└── metadata.json                   # App manifest and frame permissions
 ```
 
 ---

@@ -302,23 +302,25 @@ export async function initializeFirestore() {
 }
 
 /**
- * Save or update a document in Firestore asynchronously
+ * Save or update a document in Firestore asynchronously (throws on failure)
  */
 export async function saveToFirestore(collectionName: string, id: string, data: any) {
   try {
     await setDoc(doc(db, collectionName, id), data, { merge: true });
   } catch (err) {
     console.error(`Failed to persist document ${id} to Firestore collection ${collectionName}:`, err);
+    throw new Error(`Firestore persistence failure in ${collectionName}/${id}: ${(err as Error).message}`);
   }
 }
 
 /**
- * Delete a document from Firestore asynchronously
+ * Delete a document from Firestore asynchronously (throws on failure)
  */
 export async function deleteFromFirestore(collectionName: string, id: string) {
   try {
     await deleteDoc(doc(db, collectionName, id));
   } catch (err) {
     console.error(`Failed to delete document ${id} from Firestore collection ${collectionName}:`, err);
+    throw new Error(`Firestore deletion failure in ${collectionName}/${id}: ${(err as Error).message}`);
   }
 }
