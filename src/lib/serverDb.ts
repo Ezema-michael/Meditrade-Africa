@@ -195,6 +195,9 @@ export async function initializeFirestore() {
     const snapshot = await getDocs(listingsRef);
 
     if (snapshot.empty) {
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error('CRITICAL_DATABASE_EMPTY: run the reviewed production data migration before startup');
+      }
       console.log('📦 Firestore is empty. Seeding initial marketplace data into Firestore...');
 
       // Seed Listings
@@ -311,6 +314,9 @@ export async function initializeFirestore() {
     }
   } catch (err) {
     console.error('⚠️ Firestore sync notice (operating in high-resilience memory mode with local persistence):', err);
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('CRITICAL_DATABASE_UNAVAILABLE: Firestore initialization failed');
+    }
   }
 }
 
@@ -408,6 +414,9 @@ export async function saveFileMetadata(metadata: FileMetadata): Promise<void> {
  * Authoritative lookup for file metadata by ID directly from Firestore
  */
 export async function getFileMetadataByIdAuthoritative(id: string): Promise<FileMetadata | null> {
+  if (process.env.NODE_ENV !== 'production' && process.env.ENABLE_DEV_AUTH_BYPASS === 'true') {
+    return (collections.fileMetadata.find(f => f.id === id) as FileMetadata | undefined) || null;
+  }
   if (adminDb) {
     try {
       const docSnap = await adminDb.collection('file_metadata').doc(id).get();
@@ -452,6 +461,9 @@ export async function getFileMetadataByIdAuthoritative(id: string): Promise<File
  * Authoritative lookup for file metadata by Object Key directly from Firestore
  */
 export async function getFileMetadataByObjectKeyAuthoritative(objectKey: string): Promise<FileMetadata | null> {
+  if (process.env.NODE_ENV !== 'production' && process.env.ENABLE_DEV_AUTH_BYPASS === 'true') {
+    return (collections.fileMetadata.find(f => f.objectKey === objectKey) as FileMetadata | undefined) || null;
+  }
   if (adminDb) {
     try {
       const snap = await adminDb.collection('file_metadata').where('objectKey', '==', objectKey).get();
@@ -543,6 +555,9 @@ function sanitizeFirestoreData(data: any): any {
  */
 export async function saveToFirestore(collectionName: string, id: string, data: any) {
   const cleanData = sanitizeFirestoreData(data);
+  if (process.env.NODE_ENV !== 'production' && process.env.ENABLE_DEV_AUTH_BYPASS === 'true') {
+    return;
+  }
   let lastErr: any = null;
   try {
     if (adminDb) {
@@ -568,18 +583,26 @@ export async function saveToFirestore(collectionName: string, id: string, data: 
  * Delete a document from Firestore asynchronously (high-resilience memory mode fallback)
  */
 export async function deleteFromFirestore(collectionName: string, id: string) {
+  if (process.env.NODE_ENV !== 'production' && process.env.ENABLE_DEV_AUTH_BYPASS === 'true') {
+    return;
+  }
+  let lastErr: unknown;
   try {
     if (adminDb) {
       await adminDb.collection(collectionName).doc(id).delete();
       return;
     }
   } catch (adminErr) {
-    // Admin DB unconfigured or unauthorized in local test mode
+    lastErr = adminErr;
   }
 
   try {
     await deleteDoc(doc(db, collectionName, id));
   } catch (err) {
     console.error(`Notice: Could not delete document ${id} from Firestore collection ${collectionName}:`, (err as Error).message);
+    lastErr = err;
+    if (process.env.NODE_ENV === 'production') {
+      throw lastErr;
+    }
   }
 }

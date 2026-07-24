@@ -51,6 +51,14 @@ describe('Authorization & Identity Security Tests', () => {
   });
 
   describe('Role-Based Access Control (RBAC)', () => {
+    it('should protect saved logistics quotes from unauthenticated access', async () => {
+      const readRes = await request(app).get('/api/logistics/quotes');
+      const createRes = await request(app).post('/api/logistics/quote').send({});
+
+      expect(readRes.status).toBe(401);
+      expect(createRes.status).toBe(401);
+    });
+
     it('should block non-admin users (buyers & sellers) from admin endpoints', async () => {
       const buyerRes = await request(app)
         .get('/api/admin/vendors')

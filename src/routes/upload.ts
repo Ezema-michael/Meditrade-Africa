@@ -145,7 +145,8 @@ export function validateUploadEntityOwnership(user: any, entityType?: string, en
       const seller = collections.sellers.find(s => s.user_id === user.id);
       const isSeller = seller && seller.id === deal.seller_id;
       const isBuyer = deal.buyer_id === user.id;
-      const isEngineer = deal.assigned_engineer_id && collections.engineers.some(e => e.id === deal.assigned_engineer_id && e.user_id === user.id);
+      const isEngineer = deal.engineer_requested && deal.assigned_engineer_id &&
+        collections.engineers.some(e => e.id === deal.assigned_engineer_id && e.user_id === user.id);
       if (!isSeller && !isBuyer && !isEngineer) {
         return { allowed: false, message: 'You are not an authorized party in this escrow deal.' };
       }

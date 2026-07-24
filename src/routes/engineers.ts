@@ -267,7 +267,10 @@ engineersRouter.post("/api/inspections/:id/submit-report", requireAuth, asyncHan
   const inspection = collections.inspections.find(i => i.id === id);
   if (!inspection) return res.status(404).json({ error: "NOT_FOUND", message: "Inspection request not found" });
 
-  if (req.user.role !== 'admin' && req.user.role !== 'engineer' && inspection.assigned_engineer_id !== req.user.id) {
+  const assignedEngineer = collections.engineers.some(
+    engineer => engineer.id === inspection.assigned_engineer_id && engineer.user_id === req.user.id
+  );
+  if (req.user.role !== 'admin' && !assignedEngineer) {
     return res.status(403).json({ error: "FORBIDDEN", message: "Only the assigned engineer or admin can submit inspection reports." });
   }
 

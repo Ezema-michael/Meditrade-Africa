@@ -29,7 +29,12 @@ import { aiRouter } from "./src/routes/ai";
 import { adminRouter } from "./src/routes/admin";
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT || 3000);
+let isReady = false;
+
+if (process.env.TRUST_PROXY) {
+  app.set("trust proxy", process.env.TRUST_PROXY === "true" ? 1 : process.env.TRUST_PROXY);
+}
 
 app.use(helmet({
   contentSecurityPolicy: process.env.NODE_ENV === 'production' ? {
@@ -82,6 +87,10 @@ const corsOptions: cors.CorsOptions = {
 
 app.use(cors(corsOptions));
 app.use(correlationIdMiddleware);
+app.get("/health/live", (_req, res) => res.status(200).json({ status: "ok" }));
+app.get("/health/ready", (_req, res) => {
+  res.status(isReady ? 200 : 503).json({ status: isReady ? "ready" : "starting" });
+});
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true, limit: "2mb" }));
 app.use(globalLimiter);
@@ -105,6 +114,7 @@ app.use(errorHandler);
 
 async function startServer() {
   await initializeFirestore();
+  isReady = true;
 
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
@@ -120,9 +130,26 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  const server = app.listen(PORT, "0.0.0.0", () => {
     console.log(`Healthcare Equipment and Consumables Directory running on http://localhost:${PORT}`);
   });
+
+  const shutdown = (signal: string) => {
+    isReady = false;
+    server.close((err) => {
+      if (err) {
+        console.error("Graceful shutdown failed:", err);
+        process.exitCode = 1;
+      }
+      process.exit();
+    });
+    setTimeout(() => {
+      console.error(`Forced shutdown after ${signal} timeout`);
+      process.exit(1);
+    }, 10_000).unref();
+  };
+  process.once("SIGTERM", () => shutdown("SIGTERM"));
+  process.once("SIGINT", () => shutdown("SIGINT"));
 }
 
 export { app };

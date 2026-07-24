@@ -53,4 +53,29 @@ describe('Production Environment Validation Tests', () => {
 
     expect(() => validateEnv()).toThrow(/CLAMAV_HOST is required/);
   });
+
+  it('should require durable storage in production', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.APP_URL = 'https://meditradeafrica.org';
+    process.env.ALLOWED_ORIGINS = 'https://meditradeafrica.org';
+    process.env.FIREBASE_PROJECT_ID = 'test-project';
+    process.env.STORAGE_PROVIDER = 'local';
+    process.env.MALWARE_SCANNER = 'clamav';
+    process.env.CLAMAV_HOST = 'clamav.internal';
+    process.env.CLAMAV_PORT = '3310';
+
+    expect(() => validateEnv()).toThrow(/STORAGE_PROVIDER must be 'gcs'/);
+  });
+
+  it('should require ClamAV scanning in production', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.APP_URL = 'https://meditradeafrica.org';
+    process.env.ALLOWED_ORIGINS = 'https://meditradeafrica.org';
+    process.env.FIREBASE_PROJECT_ID = 'test-project';
+    process.env.STORAGE_PROVIDER = 'gcs';
+    process.env.GCS_BUCKET_NAME = 'private-bucket';
+    process.env.MALWARE_SCANNER = 'basic';
+
+    expect(() => validateEnv()).toThrow(/MALWARE_SCANNER must be 'clamav'/);
+  });
 });
