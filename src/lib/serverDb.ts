@@ -295,12 +295,144 @@ export async function initializeFirestore() {
         collections.leads = leadsDocs.docs.map(d => d.data() as Lead);
       }
 
-      console.log(`✅ Loaded ${collections.listings.length} listings, ${collections.sellers.length} vendors, ${collections.procurementRequests.length} RFQs from Firestore!`);
+      // Load File Metadata
+      const fileMetaDocs = await getDocs(collection(db, 'file_metadata'));
+      if (!fileMetaDocs.empty) {
+        collections.fileMetadata = fileMetaDocs.docs.map(d => d.data());
+      }
+
+      // Load Notifications
+      const notifDocs = await getDocs(collection(db, 'notifications'));
+      if (!notifDocs.empty) {
+        collections.notifications = notifDocs.docs.map(d => d.data());
+      }
+
+      console.log(`✅ Loaded ${collections.listings.length} listings, ${collections.sellers.length} vendors, ${collections.procurementRequests.length} RFQs, ${collections.fileMetadata.length} file metadata records from Firestore!`);
     }
   } catch (err) {
     console.error('⚠️ Firestore sync notice (operating in high-resilience memory mode with local persistence):', err);
   }
 }
+
+export type AllowedEntityType =
+  | 'profile_avatar'
+  | 'listing'
+  | 'equipment'
+  | 'seller'
+  | 'vendor'
+  | 'store'
+  | 'procurement'
+  | 'rfq'
+  | 'offer'
+  | 'escrow'
+  | 'financing'
+  | 'engineer'
+  | 'inspection';
+
+export type FileVisibility = 'public' | 'owner_only' | 'participants';
+
+export const DEFAULT_VISIBILITY: Record<AllowedEntityType, FileVisibility> = {
+  profile_avatar: 'public',
+  listing: 'public',
+  equipment: 'public',
+  seller: 'owner_only',
+  vendor: 'owner_only',
+  store: 'public',
+  procurement: 'participants',
+  rfq: 'participants',
+  offer: 'participants',
+  escrow: 'participants',
+  financing: 'owner_only',
+  engineer: 'public',
+  inspection: 'participants'
+};
+
+export interface FileMetadata {
+  id: string;
+  uploaderUserId: string;
+  objectKey: string;
+  originalFilename: string;
+  detectedMimeType: string;
+  claimedMimeType?: string;
+  size: number;
+  entityType: AllowedEntityType;
+  entityId?: string;
+  visibility: FileVisibility;
+  uploadDate: string;
+  storageProvider: 'local' | 'gcs';
+  status: 'active' | 'pending' | 'deleted' | 'quarantined';
+}
+
+/**
+ * Save file metadata durably in memory and Firestore
+ */
+export async function saveFileMetadata(metadata: FileMetadata): Promise<void> {
+  const existingIndex = collections.fileMetadata.findIndex(f => f.id === metadata.id || f.objectKey === metadata.objectKey);
+  if (existingIndex >= 0) {
+    collections.fileMetadata[existingIndex] = metadata;
+  } else {
+    collections.fileMetadata.push(metadata);
+  }
+
+  // Await Firestore persistence to ensure transactional durability
+  await saveToFirestore('file_metadata', metadata.id, metadata);
+}
+
+/**
+ * Retrieve file metadata by object key from memory or Firestore
+ */
+export async function getFileMetadataByObjectKey(objectKey: string): Promise<FileMetadata | null> {
+  const inMemory = collections.fileMetadata.find(f => f.objectKey === objectKey);
+  if (inMemory) return inMemory as FileMetadata;
+
+  try {
+    const q = query(collection(db, 'file_metadata'), where('objectKey', '==', objectKey));
+    const snapshot = await getDocs(q);
+    if (!snapshot.empty) {
+      const data = snapshot.docs[0].data() as FileMetadata;
+      collections.fileMetadata.push(data);
+      return data;
+    }
+  } catch (err) {
+    console.error(`Error fetching file metadata for ${objectKey} from Firestore:`, err);
+  }
+
+  return null;
+}
+
+/**
+ * Retrieve file metadata by metadata ID
+ */
+export async function getFileMetadataById(id: string): Promise<FileMetadata | null> {
+  const inMemory = collections.fileMetadata.find(f => f.id === id);
+  if (inMemory) return inMemory as FileMetadata;
+
+  try {
+    const docRef = doc(db, 'file_metadata', id);
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      const data = snap.data() as FileMetadata;
+      collections.fileMetadata.push(data);
+      return data;
+    }
+  } catch (err) {
+    console.error(`Error fetching file metadata document ${id} from Firestore:`, err);
+  }
+
+  return null;
+}
+
+/**
+ * Delete file metadata
+ */
+export async function deleteFileMetadata(id: string): Promise<void> {
+  const index = collections.fileMetadata.findIndex(f => f.id === id);
+  if (index >= 0) {
+    collections.fileMetadata.splice(index, 1);
+  }
+  await deleteFromFirestore('file_metadata', id);
+}
+
 
 import { adminDb } from '../server/config/firebaseAdmin';
 

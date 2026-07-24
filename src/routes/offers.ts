@@ -226,41 +226,49 @@ offersRouter.patch("/api/offers/:id", requireAuth, asyncHandler(async (req: any,
   res.json(offer);
 }));
 
-// GET user notifications
-offersRouter.get("/api/notifications", (req: any, res: any) => {
-  if (req.headers.authorization) {
-    return requireAuth(req, res, () => {
-      const filtered = collections.notifications.filter(n => n.user_id === req.user.id || req.user.role === 'admin');
-      res.json(filtered);
-    });
-  }
-  const userId = req.query.user_id as string;
-  if (userId) {
-    const filtered = collections.notifications.filter(n => n.user_id === userId);
-    return res.json(filtered);
-  }
-  res.json([]);
-});
+// GET user notifications (AUTHENTICATED ONLY)
+offersRouter.get("/api/notifications", requireAuth, asyncHandler(async (req: any, res: any) => {
+  const notifications = req.user.role === 'admin'
+    ? collections.notifications
+    : collections.notifications.filter(n => n.user_id === req.user.id);
+  res.json(notifications);
+}));
 
-// Read and dismiss notifications
-offersRouter.post("/api/notifications/dismiss", (req: any, res: any) => {
-  if (req.headers.authorization) {
-    return requireAuth(req, res, () => {
-      collections.notifications.forEach(n => {
-        if (n.user_id === req.user.id || req.user.role === 'admin') {
-          n.read = true;
-        }
-      });
-      res.json({ success: true });
+// Read and dismiss all notifications for the authenticated user
+offersRouter.post("/api/notifications/dismiss", requireAuth, asyncHandler(async (req: any, res: any) => {
+  const userNotifications = collections.notifications.filter(
+    n => n.user_id === req.user.id || req.user.role === 'admin'
+  );
+
+  for (const n of userNotifications) {
+    n.read = true;
+    await saveToFirestore('notifications', n.id, n);
+  }
+
+  res.json({ success: true, dismissedCount: userNotifications.length });
+}));
+
+// Dismiss a specific notification by ID
+offersRouter.post("/api/notifications/:id/dismiss", requireAuth, asyncHandler(async (req: any, res: any) => {
+  const notification = collections.notifications.find(n => n.id === req.params.id);
+
+  if (!notification) {
+    return res.status(404).json({
+      error: "NOT_FOUND",
+      message: "Notification not found."
     });
   }
-  const userId = req.body?.user_id;
-  if (userId) {
-    collections.notifications.forEach(n => {
-      if (n.user_id === userId) {
-        n.read = true;
-      }
+
+  if (req.user.role !== 'admin' && notification.user_id !== req.user.id) {
+    return res.status(403).json({
+      error: "FORBIDDEN",
+      message: "You are not authorized to dismiss this notification."
     });
   }
-  res.json({ success: true });
-});
+
+  notification.read = true;
+  await saveToFirestore('notifications', notification.id, notification);
+
+  res.json({ success: true, notification });
+}));
+

@@ -81,6 +81,7 @@ export interface Listing {
   spam_score?: number;
   spam_reasons?: string[];
   listing_type?: 'fixed' | 'make_offer' | 'auction_parts_faulty' | 'scrap_salvage' | 'auction_only';
+  is_active?: boolean;
   created_at: string;
   updated_at: string;
 }

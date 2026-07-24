@@ -281,41 +281,67 @@ adminRouter.get("/api/admin/engagement-analytics", requireAuth, requireAdmin, (r
   });
 });
 
-// GET complete database snapshot for live diagnostics/auditing (ADMIN ONLY in production)
-adminRouter.get("/api/diagnostics/schema", (req: any, res: any) => {
-  const handler = () => {
+// GET complete database snapshot metrics for live diagnostics/auditing (ADMIN ONLY)
+adminRouter.get("/api/diagnostics/schema", requireAuth, requireAdmin, (req: any, res: any) => {
+  logActivity(req.user.email || req.user.id, "DIAGNOSTICS_ACCESS", "AdminOps", "Accessed database diagnostics schema metrics");
+
+  const sanitizedUsers = collections.users.map(u => {
+    const seller = collections.sellers.find(s => s.user_id === u.id);
+    return {
+      id: u.id,
+      role: u.role,
+      status: u.status,
+      businessName: seller?.business_name || (u.role === 'admin' ? 'Platform Administrator' : 'Verified User')
+    };
+  });
+
+  const sanitizedSellers = collections.sellers.map(s => ({
+    id: s.id,
+    user_id: s.user_id,
+    business_name: s.business_name,
+    verification_status: s.verification_status,
+    state: s.state
+  }));
+
+  res.json({
+    metrics: {
+      users_count: collections.users.length,
+      sellers_count: collections.sellers.length,
+      listings_count: collections.listings.length,
+      active_listings_count: collections.listings.filter(l => l.status === 'published' && l.is_active !== false).length,
+      rfqs_count: collections.procurementRequests.length,
+      escrow_count: collections.escrowDeals.length,
+      financing_applications_count: collections.financingApplications.length,
+      verification_requests_count: collections.verificationRequests.length,
+      reports_count: collections.reports.length,
+      audit_logs_count: activityLogsCollection.length,
+      engineers_count: collections.engineers.length,
+      reviews_count: collections.engineerReviews.length
+    },
+    tables: {
+      users: sanitizedUsers,
+      sellers: sanitizedSellers,
+      categories: collections.categories,
+      listings: collections.listings.map(l => ({ id: l.id, title: l.title, status: l.status, price: l.price, state: l.state }))
+    }
+  });
+});
+
+// Optional dev diagnostics route gated explicitly by environment flags
+if (process.env.NODE_ENV === 'development' && process.env.ENABLE_DEV_DIAGNOSTICS === 'true') {
+  adminRouter.get("/api/dev/diagnostics/schema", requireAuth, requireAdmin, (req: any, res: any) => {
     res.json({
       metrics: {
         listings_count: collections.listings.length,
         sellers_count: collections.sellers.length,
-        categories_count: collections.categories.length,
-        rfqs_count: collections.procurementRequests.length,
-        users_count: collections.users.length,
-        reports_count: collections.reports.length,
-        verification_requests: collections.verificationRequests.length,
-        audit_logs_count: activityLogsCollection.length,
-        engineers_count: collections.engineers.length,
-        reviews_count: collections.engineerReviews.length
+        users_count: collections.users.length
       },
       tables: {
         users: collections.users,
         sellers: collections.sellers,
-        categories: collections.categories,
-        listings: collections.listings.map(l => ({ id: l.id, title: l.title, status: l.status, price: l.price, state: l.state })),
-        reports: collections.reports,
-        verification_requests: collections.verificationRequests,
-        audit_logs: activityLogsCollection,
-        engineers: collections.engineers,
-        reviews: collections.engineerReviews
+        listings: collections.listings
       }
     });
-  };
-
-  if (process.env.NODE_ENV !== 'production' || !req.headers.authorization) {
-    return handler();
-  }
-
-  return requireAuth(req, res, () => {
-    requireAdmin(req, res, handler);
   });
-});
+}
+

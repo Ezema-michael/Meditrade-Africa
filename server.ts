@@ -8,8 +8,12 @@ import helmet from "helmet";
 import cors from "cors";
 import path from "path";
 import { createServer as createViteServer } from "vite";
+import { validateEnv } from "./src/server/config/env";
 import { initializeFirestore } from "./src/server/state";
 import { globalLimiter, correlationIdMiddleware, errorHandler } from "./src/server/middleware";
+
+// Validate environment configuration on startup
+validateEnv();
 
 import { authRouter } from "./src/routes/auth";
 import { uploadRouter } from "./src/routes/upload";
@@ -31,12 +35,17 @@ app.use(helmet({
   contentSecurityPolicy: process.env.NODE_ENV === 'production' ? {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"],
       imgSrc: ["'self'", "data:", "blob:", "https://storage.googleapis.com", "https://*.googleusercontent.com"],
       connectSrc: ["'self'", "https://*.googleapis.com", "https://*.firebaseio.com", "wss://*.firebaseio.com"],
-      frameSrc: ["'self'", "https://*.firebaseapp.com"]
+      frameSrc: ["'self'", "https://*.firebaseapp.com"],
+      objectSrc: ["'none'"],
+      baseUri: ["'self'"],
+      frameAncestors: ["'none'"],
+      formAction: ["'self'"],
+      upgradeInsecureRequests: []
     }
   } : false,
   crossOriginEmbedderPolicy: false

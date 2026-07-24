@@ -163,8 +163,8 @@ describe('Authorization & Identity Security Tests', () => {
       const res = await request(app)
         .post('/api/upload')
         .set('Authorization', 'Bearer dev-seller1-token')
-        .field('entity_type', 'listing')
-        .field('entity_id', 'list-1')
+        .field('entity_type', 'seller')
+        .field('entity_id', 'sel-1')
         .attach('file', Buffer.from('%PDF-1.4 test document'), 'spec.pdf');
 
       expect(res.status).toBe(200);

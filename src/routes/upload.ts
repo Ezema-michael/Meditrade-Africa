@@ -3,14 +3,24 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Router } from "express";
+import { Router, Request, Response } from "express";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
 import { z } from "zod";
 import { requireAuth } from "../server/middleware";
-import { collections, saveToFirestore } from "../server/state";
-import { logActivity } from "../lib/auditLogger";
+import {
+  collections,
+  FileMetadata,
+  AllowedEntityType,
+  FileVisibility,
+  DEFAULT_VISIBILITY,
+  saveFileMetadata,
+  getFileMetadataByObjectKey,
+  getFileMetadataById,
+  deleteFileMetadata
+} from "../lib/serverDb";
+import { logActivity, logAuditEvent } from "../lib/auditLogger";
 import { validateAndProcessFile, MAX_FILES_PER_UPLOAD } from "../lib/fileValidator";
 import { storageService } from "../server/services/storageService";
 
@@ -39,6 +49,11 @@ export const AllowedEntityTypesEnum = z.enum([
   'engineer',
   'inspection'
 ]);
+
+export const ObjectKeySchema = z.string().regex(
+  /^uploads\/[0-9]+-[a-f0-9]{16}\.(jpg|png|webp|pdf)$/,
+  "Invalid document key format or illegal character sequence."
+);
 
 /**
  * Validate upload entity ownership helper
@@ -173,11 +188,49 @@ export function validateUploadEntityOwnership(user: any, entityType?: string, en
   }
 }
 
-// Upload file POST endpoint
+/**
+ * Check if a user can access a specific file metadata object based on visibility rules
+ */
+export function canAccessFile(user: any, metadata: FileMetadata): { allowed: boolean; message?: string } {
+  if (user?.role === 'admin') {
+    return { allowed: true };
+  }
+
+  if (metadata.status !== 'active') {
+    return { allowed: false, message: 'File is no longer active.' };
+  }
+
+  if (metadata.visibility === 'public') {
+    return { allowed: true };
+  }
+
+  if (metadata.uploaderUserId === user?.id) {
+    return { allowed: true };
+  }
+
+  if (metadata.visibility === 'owner_only') {
+    return { allowed: false, message: 'This document is restricted strictly to the file owner.' };
+  }
+
+  if (metadata.visibility === 'participants') {
+    if (!metadata.entityType || !metadata.entityId) {
+      return { allowed: false, message: 'Document participant metadata incomplete.' };
+    }
+    const ownership = validateUploadEntityOwnership(user, metadata.entityType, metadata.entityId);
+    if (!ownership.allowed) {
+      return { allowed: false, message: ownership.message || 'You are not an authorized participant for this document.' };
+    }
+    return { allowed: true };
+  }
+
+  return { allowed: false, message: 'Access denied.' };
+}
+
+// Transactional File Upload POST Endpoint
 uploadRouter.post("/api/upload", requireAuth, memoryUpload.array("file", MAX_FILES_PER_UPLOAD), async (req: any, res: any) => {
   try {
     const files = req.files || (req.file ? [req.file] : []);
-    
+
     if (!files || files.length === 0) {
       return res.status(400).json({
         error: "VALIDATION_ERROR",
@@ -192,7 +245,6 @@ uploadRouter.post("/api/upload", requireAuth, memoryUpload.array("file", MAX_FIL
       });
     }
 
-    // Entity ownership & strict classification validation
     const entityTypeRaw = req.body.entity_type;
     const entityId = req.body.entity_id;
 
@@ -203,7 +255,7 @@ uploadRouter.post("/api/upload", requireAuth, memoryUpload.array("file", MAX_FIL
       });
     }
 
-    const entityType = entityTypeRaw.toLowerCase().trim();
+    const entityType = entityTypeRaw.toLowerCase().trim() as AllowedEntityType;
     const parsedType = AllowedEntityTypesEnum.safeParse(entityType);
     if (!parsedType.success) {
       return res.status(400).json({
@@ -227,6 +279,7 @@ uploadRouter.post("/api/upload", requireAuth, memoryUpload.array("file", MAX_FIL
       });
     }
 
+    const visibility: FileVisibility = DEFAULT_VISIBILITY[entityType] || 'owner_only';
     const uploadResults = [];
 
     for (const file of files) {
@@ -243,7 +296,8 @@ uploadRouter.post("/api/upload", requireAuth, memoryUpload.array("file", MAX_FIL
         });
       }
 
-      const metadata = await storageService.uploadFile({
+      // Step 1: Upload binary object to storage engine
+      const storageMeta = await storageService.uploadFile({
         buffer: validation.processedBuffer || file.buffer,
         originalFilename: file.originalname || 'file',
         mimeType: file.mimetype,
@@ -253,25 +307,59 @@ uploadRouter.post("/api/upload", requireAuth, memoryUpload.array("file", MAX_FIL
         entityId
       });
 
-      // Persist storage metadata in memory and Firestore for authorization and audits
-      collections.fileMetadata.push(metadata);
-      saveToFirestore("file_metadata", metadata.id, metadata).catch(err => {
-        console.error("Failed to save file metadata to Firestore:", err);
-      });
+      const fullFileMetadata: FileMetadata = {
+        id: storageMeta.id,
+        uploaderUserId: req.user.id,
+        objectKey: storageMeta.objectKey,
+        originalFilename: storageMeta.originalFilename,
+        detectedMimeType: storageMeta.mimeType,
+        claimedMimeType: storageMeta.claimedMimeType,
+        size: storageMeta.size,
+        entityType,
+        entityId: entityId || undefined,
+        visibility,
+        uploadDate: storageMeta.uploadDate,
+        storageProvider: (process.env.STORAGE_PROVIDER as 'local' | 'gcs') || 'local',
+        status: 'active'
+      };
+
+      // Step 2: Transactional persistence of metadata
+      try {
+        await saveFileMetadata(fullFileMetadata);
+      } catch (metaErr) {
+        // Compensating Transaction: Roll back uploaded storage file
+        console.error("File metadata persistence failed. Initiating compensating cleanup:", metaErr);
+        const rollbackSuccess = await storageService.deleteFile(storageMeta.objectKey);
+        
+        logAuditEvent({
+          actor: req.user.email || req.user.id,
+          action: 'FILE_UPLOAD_ROLLBACK',
+          category: 'Storage',
+          description: `Compensating rollback ${rollbackSuccess ? 'SUCCEEDED' : 'FAILED'} for object ${storageMeta.objectKey}`,
+          metadata: { objectKey: storageMeta.objectKey, rollbackSuccess }
+        });
+
+        return res.status(500).json({
+          error: "FILE_METADATA_PERSISTENCE_FAILED",
+          message: "Failed to establish durable file metadata record. Upload rolled back."
+        });
+      }
 
       uploadResults.push({
-        url: metadata.publicUrl,
-        filename: metadata.originalFilename,
-        mimetype: metadata.detectedMimeType,
-        size: metadata.size,
-        objectKey: metadata.objectKey
+        id: fullFileMetadata.id,
+        url: storageMeta.publicUrl,
+        filename: fullFileMetadata.originalFilename,
+        mimetype: fullFileMetadata.detectedMimeType,
+        size: fullFileMetadata.size,
+        objectKey: fullFileMetadata.objectKey,
+        visibility: fullFileMetadata.visibility
       });
 
       logActivity(
         req.user.email || req.user.id,
         'FILE_UPLOAD',
         'Uploads',
-        `Uploaded file: ${metadata.originalFilename} (${metadata.detectedMimeType}, ${metadata.size} bytes)`
+        `Uploaded file: ${fullFileMetadata.originalFilename} (${fullFileMetadata.detectedMimeType}, ${fullFileMetadata.size} bytes, visibility: ${fullFileMetadata.visibility})`
       );
     }
 
@@ -296,7 +384,7 @@ uploadRouter.post("/api/upload", requireAuth, memoryUpload.array("file", MAX_FIL
 });
 
 /**
- * Authenticated Private Document Download GET Route
+ * Authenticated Private Document Download GET Route by object key (?key=...)
  */
 uploadRouter.get("/api/files/download", requireAuth, async (req: any, res: any) => {
   try {
@@ -306,51 +394,126 @@ uploadRouter.get("/api/files/download", requireAuth, async (req: any, res: any) 
     }
 
     const key = decodeURIComponent(rawKey);
-    const normalizedKey = path.normalize(key).replace(/^(\.\.[\/\\])+/, '');
-
-    if (!normalizedKey.startsWith('uploads/')) {
-      return res.status(403).json({ error: "FORBIDDEN", message: "Invalid document path parameter." });
+    const parseKey = ObjectKeySchema.safeParse(key);
+    if (!parseKey.success) {
+      return res.status(400).json({
+        error: "INVALID_OBJECT_KEY",
+        message: "Invalid object key format or illegal characters."
+      });
     }
 
-    // Look up file metadata to verify access rights
-    const metadata = collections.fileMetadata.find(f => f.objectKey === normalizedKey);
+    const objectKey = parseKey.data;
+    const metadata = await getFileMetadataByObjectKey(objectKey);
 
     if (!metadata) {
-      // If file metadata is completely missing/unregistered, deny access
       return res.status(404).json({ error: "NOT_FOUND", message: "Private document metadata not found." });
     }
 
-    // Authorization check: User must be admin, file uploader, or authorized participant for the target entity
-    if (req.user.role !== 'admin' && metadata.uploaderUserId !== req.user.id) {
-      if (metadata.entityType && metadata.entityType !== 'profile_avatar') {
-        const check = validateUploadEntityOwnership(req.user, metadata.entityType, metadata.entityId);
-        if (!check.allowed) {
-          return res.status(403).json({
-            error: "FORBIDDEN",
-            message: check.message || "You are not authorized to access this document."
-          });
-        }
-      } else if (metadata.entityType !== 'profile_avatar') {
-        return res.status(403).json({
-          error: "FORBIDDEN",
-          message: "You are not authorized to access this private document."
-        });
-      }
+    const access = canAccessFile(req.user, metadata);
+    if (!access.allowed) {
+      return res.status(403).json({
+        error: "FORBIDDEN",
+        message: access.message || "You are not authorized to download this document."
+      });
     }
 
     if (process.env.STORAGE_PROVIDER === 'gcs' && process.env.GCS_BUCKET_NAME) {
-      const signedUrl = await storageService.getSignedUrl(normalizedKey, 15);
+      const signedUrl = await storageService.getSignedUrl(objectKey, 15);
       return res.redirect(signedUrl);
     }
 
-    const fullPath = path.join(process.cwd(), normalizedKey);
+    const fullPath = path.join(process.cwd(), objectKey);
     if (!fs.existsSync(fullPath)) {
       return res.status(404).json({ error: "NOT_FOUND", message: "Private document file not found on disk." });
     }
+
+    const safeFilename = path.basename(metadata.originalFilename).replace(/[^a-zA-Z0-9_.-]/g, '_');
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}"`);
+    res.setHeader('Content-Type', metadata.detectedMimeType);
 
     res.sendFile(fullPath);
   } catch (err: any) {
     console.error("Download route error:", err);
     res.status(500).json({ error: "STORAGE_ERROR", message: "An error occurred while serving requested document." });
+  }
+});
+
+/**
+ * Download file by Metadata ID route
+ */
+uploadRouter.get("/api/files/:fileId/download", requireAuth, async (req: any, res: any) => {
+  try {
+    const fileId = req.params.fileId;
+    const metadata = await getFileMetadataById(fileId);
+
+    if (!metadata) {
+      return res.status(404).json({ error: "NOT_FOUND", message: "Document metadata not found." });
+    }
+
+    const access = canAccessFile(req.user, metadata);
+    if (!access.allowed) {
+      return res.status(403).json({
+        error: "FORBIDDEN",
+        message: access.message || "You are not authorized to access this document."
+      });
+    }
+
+    if (process.env.STORAGE_PROVIDER === 'gcs' && process.env.GCS_BUCKET_NAME) {
+      const signedUrl = await storageService.getSignedUrl(metadata.objectKey, 15);
+      return res.redirect(signedUrl);
+    }
+
+    const fullPath = path.join(process.cwd(), metadata.objectKey);
+    if (!fs.existsSync(fullPath)) {
+      return res.status(404).json({ error: "NOT_FOUND", message: "File not found on disk." });
+    }
+
+    const safeFilename = path.basename(metadata.originalFilename).replace(/[^a-zA-Z0-9_.-]/g, '_');
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}"`);
+    res.setHeader('Content-Type', metadata.detectedMimeType);
+
+    res.sendFile(fullPath);
+  } catch (err: any) {
+    console.error("Download by ID route error:", err);
+    res.status(500).json({ error: "STORAGE_ERROR", message: "An error occurred while serving document." });
+  }
+});
+
+/**
+ * Dedicated Public File Route
+ */
+uploadRouter.get("/api/public/files/:id", async (req: Request, res: Response) => {
+  try {
+    const fileId = req.params.id;
+    const metadata = await getFileMetadataById(fileId);
+
+    if (!metadata || metadata.status !== 'active') {
+      return res.status(404).json({ error: "NOT_FOUND", message: "Public file not found." });
+    }
+
+    if (metadata.visibility !== 'public') {
+      return res.status(403).json({ error: "FORBIDDEN", message: "Requested file is private." });
+    }
+
+    if (process.env.STORAGE_PROVIDER === 'gcs' && process.env.GCS_BUCKET_NAME) {
+      const signedUrl = await storageService.getSignedUrl(metadata.objectKey, 15);
+      return res.redirect(signedUrl);
+    }
+
+    const fullPath = path.join(process.cwd(), metadata.objectKey);
+    if (!fs.existsSync(fullPath)) {
+      return res.status(404).json({ error: "NOT_FOUND", message: "Public file not found on disk." });
+    }
+
+    res.setHeader('Content-Type', metadata.detectedMimeType);
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.sendFile(fullPath);
+  } catch (err: any) {
+    console.error("Public file route error:", err);
+    res.status(500).json({ error: "STORAGE_ERROR", message: "Failed to serve public file." });
   }
 });

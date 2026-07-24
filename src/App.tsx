@@ -186,16 +186,22 @@ export default function App() {
   // Auth headers generator helper
   const getAuthHeaders = () => {
     const headers: Record<string, string> = {};
-    if (currentUser?.role === 'admin' || currentUser?.id === 'usr-3' || currentUser?.id === 'dev-admin') {
-      headers['Authorization'] = 'Bearer dev-admin-token';
-    } else if (currentUser?.id === 'usr-1' || currentUser?.email === 'chidi.obi@medlink.com.ng') {
-      headers['Authorization'] = 'Bearer dev-seller1-token';
-    } else if (currentUser?.id === 'usr-2' || currentUser?.email === 'fatima@westafricamed.com') {
-      headers['Authorization'] = 'Bearer dev-seller2-token';
-    } else if (currentUser?.id === 'usr-5' || currentUser?.email === 'buyer@riversidememorial.org') {
-      headers['Authorization'] = 'Bearer dev-buyer-token';
-    } else if (currentUser?.token) {
+    if (currentUser?.token) {
       headers['Authorization'] = `Bearer ${currentUser.token}`;
+      return headers;
+    }
+
+    // Local development auth bypass header fallback
+    if ((import.meta as any).env?.DEV === true && (import.meta as any).env?.VITE_ENABLE_DEV_ADMIN === 'true') {
+      if (currentUser?.role === 'admin' || currentUser?.id === 'usr-3' || currentUser?.id === 'dev-admin') {
+        headers['Authorization'] = 'Bearer dev-admin-token';
+      } else if (currentUser?.id === 'usr-1' || currentUser?.email === 'chidi.obi@medlink.com.ng') {
+        headers['Authorization'] = 'Bearer dev-seller1-token';
+      } else if (currentUser?.id === 'usr-2' || currentUser?.email === 'fatima@westafricamed.com') {
+        headers['Authorization'] = 'Bearer dev-seller2-token';
+      } else if (currentUser?.id === 'usr-5' || currentUser?.email === 'buyer@riversidememorial.org') {
+        headers['Authorization'] = 'Bearer dev-buyer-token';
+      }
     }
     return headers;
   };
@@ -288,10 +294,9 @@ export default function App() {
   };
 
   // Sync simulated Firestore notifications
-  const fetchNotifications = async (userId = currentUser?.id) => {
+  const fetchNotifications = async (_userId?: string) => {
     try {
-      const url = userId ? `/api/notifications?user_id=${userId}` : '/api/notifications';
-      const res = await fetch(url, { headers: getAuthHeaders() });
+      const res = await fetch('/api/notifications', { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data)) {
