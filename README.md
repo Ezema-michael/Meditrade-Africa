@@ -35,20 +35,35 @@
 ### 🤖 7. Gemini AI Diagnostic Engine
 * Automated equipment spec sheet extraction from raw WhatsApp trading text using Google Gemini (`@google/genai`).
 * AI category auto-classification and description enhancement.
-* Side-by-side technical device comparison engine (`gemini-3.6-flash`) for clinical decision-making.
+* Side-by-side technical device comparison engine (`gemini-3.5-flash`) for clinical decision-making.
+
+---
+
+## 🔒 Security & Authorization Hardening
+
+The application has been hardened with enterprise-grade security controls:
+
+1. **Restricted Firestore Security Rules**: Strictly prohibits wildcards or unauthenticated writes. Enforces authentication and document ownership checks.
+2. **Centralized Firebase Admin Initialization**: Lazily initialized server-side with strict credential validation to prevent startup crashes when environment variables are unconfigured.
+3. **Registration Account Flow**: Newly authenticated users begin in `pending_registration` status and cannot access sensitive seller/buyer actions until full profile completion.
+4. **Server-Derived Identity**: All sensitive actions derive user identity (`id`, `email`, `role`, `seller_id`) directly from `req.user` verified token claims. Client-submitted identity fields are ignored.
+5. **Strict Ownership Authorization**: Route handlers enforce resource ownership for listings, seller profiles, offers, escrow deals, and financing applications.
+6. **Hardened File Upload Pipeline**: Includes magic byte MIME type detection, XSS filename sanitization, anti-malware scanning abstractions, and file size limits.
+7. **Production-Safe Development Admin**: Frontend development admin mode is explicitly restricted to development mode and requires `VITE_ENABLE_DEV_ADMIN="true"` in local environment.
 
 ---
 
 ## 🚦 System Architecture & Integration Status
 
 ### Live Production Integrations
-* **Firestore Authoritative Database**: Persistent cloud data storage backed by Firebase Firestore (`firebase-applet-config.json` & `firebase-blueprint.json`) with automated seeding and live state sync.
+* **Firestore Authoritative Database**: Persistent cloud data storage backed by Firebase Firestore (`firebase-applet-config.json` & `firebase-blueprint.json`) with live state sync.
 * **Firebase Authentication & RBAC**: Token verification via Firebase Admin SDK with role and ownership checks (`requireAuth`, `requireRole`, `requireAdmin`).
-* **Google Gemini AI Engine**: `@google/genai` SDK using `gemini-3.5-flash` and `gemini-3.6-flash` for automated text extraction, description enhancement, category detection, and side-by-side device comparison.
+* **Google Gemini AI Engine**: `@google/genai` SDK using `gemini-3.5-flash` for automated text extraction, description enhancement, category detection, and side-by-side device comparison.
 * **Zod API Validation**: Comprehensive runtime schema validation on all POST/PATCH/DELETE request payloads (`src/lib/validation.ts`).
-* **Structured Audit Logging**: Event activity logging tracking regulatory, escrow, and trading actions (`src/lib/auditLogger.ts`).
-* **Secure File Uploads**: Disk-based upload pipeline with file type filtering and 50MB size restrictions.
-* **CI/CD Pipeline**: GitHub Actions workflow (`/.github/workflows/ci.yml`) performing static type checking (`tsc --noEmit`) and testing (`vitest`).
+* **Structured Audit Logging**: Centralized event activity logging tracking regulatory, escrow, and trading actions (`src/lib/auditLogger.ts`).
+* **Secure File Uploads**: Storage service pipeline with magic byte validation, anti-malware checks, and local/GCS storage adapters.
+* **Security Headers & Rate Limiting**: Helmet security headers and tiered rate limiting (global, API, critical actions).
+* **Automated Test Suite**: Vitest and Supertest integration suite verifying security, authentication, authorization, and validation rules (`npm test`).
 
 ### Prototype & Simulated Integrations
 * **Bank Escrow Disbursal**: Payment gateway collection and bank disbursal triggers are simulated via structured reference keys (`ESC-2026-*`) and milestone state updates.
@@ -62,8 +77,9 @@
 * **Frontend**: React 19, TypeScript, Vite, Tailwind CSS, Lucide React Icons, Motion animations.
 * **Backend**: Node.js, Express (`server.ts`) with modular route handlers in `src/routes/`.
 * **Database & Security**: Firebase Firestore & Firebase Auth, with `firestore.rules`.
-* **Validation & Logging**: Zod, `express-rate-limit`, structured JSON audit logging.
+* **Validation & Security**: Zod, `helmet`, `express-rate-limit`, structured JSON audit logging.
 * **AI Integration**: Google Gemini SDK (`@google/genai`).
+* **Testing**: Vitest, Supertest (`npm test`).
 
 ---
 
@@ -75,6 +91,9 @@
 ├── firebase-blueprint.json         # Firestore schema blueprint
 ├── firestore.rules                 # Firestore security rules
 ├── .github/workflows/ci.yml        # CI pipeline for type checking and testing
+├── tests/                          # Automated Vitest/Supertest security test suite
+│   ├── security.test.ts
+│   └── authorization.test.ts
 ├── src/
 │   ├── App.tsx                     # Primary layout & application state router
 │   ├── data.ts                     # Initial Nigerian states, categories, and seed data
@@ -85,8 +104,10 @@
 │   │   ├── serverDb.ts             # Firestore initialization & live collection sync
 │   │   └── firebase.ts             # Client-side Firebase configuration
 │   ├── server/
-│   │   ├── middleware.ts           # Express auth, rate limiters, multer upload engine
-│   │   └── state.ts                # Centralized state re-exports
+│   │   ├── middleware.ts           # Express auth, rate limiters, security middleware
+│   │   ├── state.ts                # Centralized state re-exports & Firestore synchronization
+│   │   └── services/
+│   │       └── storageService.ts   # Secure file storage & anti-malware pipeline
 │   ├── routes/
 │   │   ├── auth.ts                 # Auth sync & user profile endpoints
 │   │   ├── upload.ts               # File & media upload routes

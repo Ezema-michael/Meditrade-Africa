@@ -39,7 +39,7 @@ import {
 import { Listing, Category, Seller, SubscriptionPlan } from './types';
 import { CATEGORIES, NIGERIAN_STATES, SUBSCRIPTION_PLANS, INITIAL_SELLERS } from './data';
 
-// Component imports
+import { DEV_ADMIN_USER, isDevAdminEnabled } from './config/devUser';
 import ListingCard from './components/ListingCard';
 import AIDashboard from './components/AIDashboard';
 import ProcurementHub from './components/ProcurementHub';
@@ -166,12 +166,18 @@ export default function App() {
   const [showNotifications, setShowNotifications] = useState(false);
 
   // Active Session User profile
-  const [currentUser, setCurrentUser] = useState<any>({
-    id: 'usr-3',
-    email: 'ezemamichael@gmail.com',
-    role: 'admin', // Mapped as clinical admin
-    businessName: 'MediTrade General Ops'
-  });
+  const [devAdminActive] = useState<boolean>(isDevAdminEnabled());
+  const [currentUser, setCurrentUser] = useState<any>(
+    isDevAdminEnabled()
+      ? DEV_ADMIN_USER
+      : {
+          id: 'usr-guest',
+          email: 'guest@meditrade.local',
+          role: 'guest',
+          status: 'pending_registration',
+          businessName: 'Unregistered Guest'
+        }
+  );
 
   // Dynamic user session list and registration modal triggers
   const [availableUsers, setAvailableUsers] = useState<any[]>([]);
@@ -432,6 +438,12 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50/50 text-slate-800 flex flex-col font-sans">
       
+      {devAdminActive && (
+        <div className="bg-amber-500 text-slate-950 font-black text-center py-1.5 px-4 text-xs tracking-wider uppercase border-b border-amber-600 shadow-xs flex items-center justify-center gap-2">
+          <span>⚠️ DEVELOPMENT ADMIN SESSION ACTIVE — NOT REAL AUTHENTICATION</span>
+        </div>
+      )}
+
       {/* 1. TOP HEADER BANNER: Alerts indicating logged email */}
       <div className="bg-indigo-600 text-white px-4 py-2.5 text-xs font-semibold flex flex-col sm:flex-row justify-between items-center gap-2 border-b border-indigo-700 shadow-sm relative z-50">
         <div className="flex items-center gap-2 flex-wrap justify-center text-center">

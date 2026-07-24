@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import request from 'supertest';
 import { app } from '../server';
 
@@ -17,14 +17,16 @@ describe('Security & Authentication API Tests', () => {
         });
 
       expect(res.status).toBe(401);
-      expect(res.body.error).toContain('Authentication required');
+      expect(res.body.error).toBe('UNAUTHORIZED');
+      expect(res.body.message).toContain('Authentication required');
     });
 
     it('should reject GET /api/admin/dashboard without Authorization header', async () => {
       const res = await request(app).get('/api/admin/dashboard');
 
       expect(res.status).toBe(401);
-      expect(res.body.error).toContain('Authentication required');
+      expect(res.body.error).toBe('UNAUTHORIZED');
+      expect(res.body.message).toContain('Authentication required');
     });
 
     it('should reject POST /api/procurement-requests without Authorization header', async () => {
@@ -38,7 +40,8 @@ describe('Security & Authentication API Tests', () => {
         });
 
       expect(res.status).toBe(401);
-      expect(res.body.error).toContain('Authentication required');
+      expect(res.body.error).toBe('UNAUTHORIZED');
+      expect(res.body.message).toContain('Authentication required');
     });
 
     it('should reject POST /api/escrow/create without Authorization header', async () => {
@@ -50,7 +53,8 @@ describe('Security & Authentication API Tests', () => {
         });
 
       expect(res.status).toBe(401);
-      expect(res.body.error).toContain('Authentication required');
+      expect(res.body.error).toBe('UNAUTHORIZED');
+      expect(res.body.message).toContain('Authentication required');
     });
 
     it('should reject POST /api/financing/apply without Authorization header', async () => {
@@ -63,7 +67,8 @@ describe('Security & Authentication API Tests', () => {
         });
 
       expect(res.status).toBe(401);
-      expect(res.body.error).toContain('Authentication required');
+      expect(res.body.error).toBe('UNAUTHORIZED');
+      expect(res.body.message).toContain('Authentication required');
     });
 
     it('should reject POST /api/offers without Authorization header', async () => {
@@ -75,7 +80,8 @@ describe('Security & Authentication API Tests', () => {
         });
 
       expect(res.status).toBe(401);
-      expect(res.body.error).toContain('Authentication required');
+      expect(res.body.error).toBe('UNAUTHORIZED');
+      expect(res.body.message).toContain('Authentication required');
     });
   });
 
@@ -86,7 +92,8 @@ describe('Security & Authentication API Tests', () => {
         .set('Authorization', 'Bearer f-uid-3');
 
       expect(res.status).toBe(401);
-      expect(res.body.error).toBe('Invalid or expired token');
+      expect(res.body.error).toBe('UNAUTHORIZED');
+      expect(res.body.message).toContain('Invalid or expired');
     });
 
     it('should reject fake JWT token without valid Firebase signature', async () => {
@@ -96,24 +103,22 @@ describe('Security & Authentication API Tests', () => {
         .set('Authorization', `Bearer ${fakeJwt}`);
 
       expect(res.status).toBe(401);
-      expect(res.body.error).toBe('Invalid or expired token');
+      expect(res.body.error).toBe('UNAUTHORIZED');
+      expect(res.body.message).toContain('Invalid or expired');
     });
   });
 
   describe('Input Validation & Zod Schema Enforcement', () => {
-    it('should reject POST /api/listings with missing required fields (even if authenticated mock)', async () => {
-      // Testing validation middleware response structure
+    it('should reject unauthenticated POST /api/auth/register', async () => {
       const res = await request(app)
-        .post('/api/auth/sync-user')
+        .post('/api/auth/register')
         .send({
-          // Missing email and name
+          email: 'invalid-email-format',
           role: 'buyer'
         });
 
-      expect(res.status).toBe(400);
-      expect(res.body.error).toBe('Validation error');
-      expect(res.body.details).toBeDefined();
-      expect(Array.isArray(res.body.details)).toBe(true);
+      expect(res.status).toBe(401);
+      expect(res.body.error).toBe('UNAUTHORIZED');
     });
 
     it('should reject invalid condition enum in listings validation schema', async () => {
@@ -128,7 +133,6 @@ describe('Security & Authentication API Tests', () => {
           state: 'Lagos'
         });
 
-      // Will fail auth first or fail validation if auth passed
       expect([401, 400]).toContain(res.status);
     });
   });

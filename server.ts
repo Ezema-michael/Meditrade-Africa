@@ -4,11 +4,12 @@
  */
 
 import express from "express";
+import helmet from "helmet";
 import cors from "cors";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import { initializeFirestore } from "./src/server/state";
-import { globalLimiter } from "./src/server/middleware";
+import { globalLimiter, correlationIdMiddleware, errorHandler } from "./src/server/middleware";
 
 import { authRouter } from "./src/routes/auth";
 import { uploadRouter } from "./src/routes/upload";
@@ -26,7 +27,12 @@ import { adminRouter } from "./src/routes/admin";
 const app = express();
 const PORT = 3000;
 
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginEmbedderPolicy: false
+}));
 app.use(cors());
+app.use(correlationIdMiddleware);
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 app.use(globalLimiter);
@@ -47,6 +53,9 @@ app.use(engineersRouter);
 app.use(logisticsRouter);
 app.use(aiRouter);
 app.use(adminRouter);
+
+// Global Error Handling Middleware
+app.use(errorHandler);
 
 async function startServer() {
   await initializeFirestore();

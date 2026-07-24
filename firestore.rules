@@ -1,62 +1,43 @@
 rules_version = '2';
+
+/**
+ * MediTrade Africa - Production Firestore Security Rules
+ * 
+ * ARCHITECTURE NOTE:
+ * All state mutations (create, update, delete) and privileged queries for
+ * users, sellers, RFQs, quotes, offers, escrow, financing, audits, engineers, etc.,
+ * MUST pass through the authenticated Express backend API.
+ * 
+ * The Node.js Express server initializes the Firebase Admin SDK (`firebase-admin`),
+ * which runs with service-account administrative privileges and BYPASSES these
+ * client security rules completely.
+ * 
+ * Direct client SDK write access is denied across all collections to guarantee
+ * server-side Zod payload validation, role checks, and structured audit logging.
+ */
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Allow public read access to listings, sellers, rfq requests, and engineers
+    
+    // Default-deny all direct client operations
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Public Marketplace Listings:
+    // Clients can read listings directly ONLY if they are published and active.
+    // Direct client writes are disabled (must use backend API).
     match /listings/{listingId} {
-      allow read: if true;
-      allow write: if true;
+      allow read: if resource.data.status == "published"
+                  && (resource.data.is_active == true || !('is_active' in resource.data));
+      allow create, update, delete: if false;
     }
-    match /sellers/{sellerId} {
-      allow read: if true;
-      allow write: if true;
-    }
-    match /procurement_requests/{requestId} {
-      allow read: if true;
-      allow write: if true;
-    }
-    match /procurement_quotes/{quoteId} {
-      allow read: if true;
-      allow write: if true;
-    }
-    match /escrow_deals/{dealId} {
-      allow read: if true;
-      allow write: if true;
-    }
-    match /offers/{offerId} {
-      allow read: if true;
-      allow write: if true;
-    }
-    match /leads/{leadId} {
-      allow read: if true;
-      allow write: if true;
-    }
-    match /chats/{chatId} {
-      allow read: if true;
-      allow write: if true;
-      match /messages/{messageId} {
-        allow read: if true;
-        allow write: if true;
-      }
-    }
-    match /inspections/{inspectionId} {
-      allow read: if true;
-      allow write: if true;
-    }
-    match /engineers/{engineerId} {
-      allow read: if true;
-      allow write: if true;
-    }
-    match /notifications/{notificationId} {
-      allow read: if true;
-      allow write: if true;
-    }
-    match /users/{userId} {
-      allow read: if true;
-      allow write: if true;
-    }
+
+    // Public Categories index: read-only for buyers/sellers in client UI
     match /categories/{categoryId} {
       allow read: if true;
-      allow write: if true;
+      allow create, update, delete: if false;
     }
   }
 }
+

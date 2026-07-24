@@ -4,11 +4,8 @@
  */
 
 import express, { Request, Response, NextFunction } from "express";
-import path from "path";
-import fs from "fs";
-import multer from "multer";
 import rateLimit from "express-rate-limit";
-import { getAuth } from "firebase-admin/auth";
+import { adminAuth } from "./config/firebaseAdmin";
 import { collections } from "../lib/serverDb";
 
 export const sanitizeText = (text: any): string => {
@@ -37,82 +34,88 @@ export const sanitizeText = (text: any): string => {
   return cleaned.trim();
 };
 
+export const correlationIdMiddleware = (req: any, res: Response, next: NextFunction) => {
+  const reqId = (req.headers['x-request-id'] as string) || `req-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+  req.id = reqId;
+  res.setHeader('x-request-id', reqId);
+  next();
+};
+
 export const requireAuth = async (req: any, res: Response, next: NextFunction) => {
   const header = req.headers.authorization;
 
   if (!header?.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Authentication required' });
+    return res.status(401).json({
+      error: 'UNAUTHORIZED',
+      message: 'Authentication required. Bearer token missing.'
+    });
+  }
+
+  const token = header.substring(7);
+
+  // Local development auth bypass guard
+  if (
+    process.env.NODE_ENV === 'development' &&
+    process.env.ENABLE_DEV_AUTH_BYPASS === 'true' &&
+    token === 'dev-admin-token'
+  ) {
+    req.auth = { uid: 'dev-admin', email: 'dev-admin@meditrade.local' };
+    req.user = {
+      id: 'dev-admin',
+      firebase_uid: 'dev-admin',
+      email: 'dev-admin@meditrade.local',
+      role: 'admin',
+      status: 'active',
+      businessName: 'MediTrade Development Admin'
+    };
+    return next();
   }
 
   try {
-    const token = header.substring(7);
-    const decoded = await getAuth().verifyIdToken(token);
-
+    const decoded = await adminAuth.verifyIdToken(token);
     req.auth = decoded;
     const uid = decoded.uid;
-    const user = collections.users.find(u => u.firebase_uid === uid || u.id === uid || (decoded.email && u.email === decoded.email));
-    req.user = user || {
-      id: uid,
-      firebase_uid: uid,
-      email: decoded.email || '',
-      role: 'seller',
-      status: 'active'
-    };
+    const user = collections.users.find(
+      u => u.firebase_uid === uid || u.id === uid || (decoded.email && u.email === decoded.email)
+    );
+
+    if (user) {
+      if (user.status === 'disabled' || user.status === 'suspended') {
+        return res.status(403).json({
+          error: 'ACCOUNT_SUSPENDED',
+          message: 'Your account is disabled or suspended.'
+        });
+      }
+      req.user = user;
+    } else {
+      // Unregistered user - set role to 'guest' and status to 'pending_registration'
+      // DO NOT automatically assign 'seller' role or create a seller profile!
+      req.user = {
+        id: uid,
+        firebase_uid: uid,
+        email: decoded.email || null,
+        role: 'guest',
+        status: 'pending_registration'
+      };
+    }
     next();
-  } catch {
-    return res.status(401).json({ error: 'Invalid or expired token' });
+  } catch (err: any) {
+    return res.status(401).json({
+      error: 'UNAUTHORIZED',
+      message: 'Invalid or expired Firebase authentication token.'
+    });
   }
 };
 
 export const requireAdmin = (req: any, res: Response, next: NextFunction) => {
   if (req.user?.role !== 'admin') {
-    return res.status(403).json({ error: 'Admin access required' });
+    return res.status(403).json({
+      error: 'FORBIDDEN',
+      message: 'You are not authorized to perform this action.'
+    });
   }
   next();
 };
-
-const uploadStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const uploadsDir = path.join(process.cwd(), "uploads");
-    if (!fs.existsSync(uploadsDir)) {
-      fs.mkdirSync(uploadsDir, { recursive: true });
-    }
-    cb(null, uploadsDir);
-  },
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    cb(null, file.fieldname + "-" + uniqueSuffix + ext);
-  },
-});
-
-export const uploadEngine = multer({
-  storage: uploadStorage,
-  limits: {
-    fileSize: 50 * 1024 * 1024,
-  },
-  fileFilter: (req, file, cb) => {
-    const allowedMimeTypes = [
-      "image/jpeg",
-      "image/jpg",
-      "image/png",
-      "image/gif",
-      "image/webp",
-      "image/svg+xml",
-      "video/mp4",
-      "video/mpeg",
-      "video/ogg",
-      "video/webm",
-      "video/quicktime",
-      "video/x-msvideo",
-    ];
-    if (allowedMimeTypes.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error("Unsupported file type. Only standard images and videos are allowed."));
-    }
-  },
-});
 
 export const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -120,7 +123,7 @@ export const globalLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   validate: false,
-  message: { error: "Too many requests, please try again later." }
+  message: { error: "TOO_MANY_REQUESTS", message: "Too many requests, please try again later." }
 });
 
 export const apiLimiter = rateLimit({
@@ -129,7 +132,7 @@ export const apiLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   validate: false,
-  message: { error: "Too many requests from this IP, please try again after 15 minutes." }
+  message: { error: "TOO_MANY_REQUESTS", message: "Too many requests from this IP, please try again after 15 minutes." }
 });
 
 export const criticalLimiter = rateLimit({
@@ -138,5 +141,15 @@ export const criticalLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   validate: false,
-  message: { error: "Throttled: Too many critical requests from this IP, please try again after 5 minutes." }
+  message: { error: "TOO_MANY_REQUESTS", message: "Throttled: Too many critical requests from this IP, please try again after 5 minutes." }
 });
+
+export const errorHandler = (err: any, req: Request, res: Response, next: NextFunction) => {
+  console.error('Unhandled server error:', err);
+  const status = err.status || err.statusCode || 500;
+  res.status(status).json({
+    error: err.code || 'SERVER_ERROR',
+    message: err.message || 'An unexpected server error occurred.',
+    correlationId: (req as any).id
+  });
+};

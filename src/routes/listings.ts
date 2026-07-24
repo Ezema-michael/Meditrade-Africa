@@ -10,11 +10,12 @@ import {
   CreateListingSchema, 
   UpdateListingSchema, 
   validateBody, 
-  requireListingOwnerOrAdmin, 
+  requireListingOwnerOrAdmin,
+  requireCompletedRegistration,
   asyncHandler 
 } from "../lib/validation";
 import { logActivity } from "../lib/auditLogger";
-import { Listing, Report, Category } from "../types";
+import { Listing, Report } from "../types";
 import { NIGERIAN_STATES } from "../data";
 
 export const listingsRouter = Router();
@@ -67,7 +68,6 @@ listingsRouter.get("/api/listings", (req, res) => {
       results_count: filtered.length
     });
     
-    // Prevent memory creep
     if (collections.searchLogs.length > 500) {
       collections.searchLogs.pop();
     }
@@ -92,7 +92,7 @@ listingsRouter.get("/api/listings/:slugOrId", (req, res) => {
   const listing = collections.listings.find(l => l.id === term || l.slug === term);
   
   if (!listing) {
-    return res.status(404).json({ error: "Marketplace listing not found" });
+    return res.status(404).json({ error: "NOT_FOUND", message: "Marketplace listing not found" });
   }
 
   listing.view_count += 1;
@@ -100,38 +100,38 @@ listingsRouter.get("/api/listings/:slugOrId", (req, res) => {
 });
 
 // Listings: Create Listing
-listingsRouter.post("/api/listings", requireAuth, validateBody(CreateListingSchema), asyncHandler(async (req: any, res: any) => {
-  const { seller_id, category_id, title, brand, model, condition, price, currency, negotiable, state, city, description, is_ai_extracted, listing_type, images, videos, links } = req.body;
+listingsRouter.post("/api/listings", requireAuth, requireCompletedRegistration, validateBody(CreateListingSchema), asyncHandler(async (req: any, res: any) => {
+  const body = req.validatedBody;
+  const { category_id, title, brand, model, condition, price, currency, negotiable, state, city, description, is_ai_extracted, listing_type, images, videos, links } = req.body;
 
-  // Find seller profile belonging to the authenticated user
-  const seller = collections.sellers.find(s => s.user_id === req.user.id || s.id === seller_id);
+  // Derive seller strictly from session user
+  const seller = collections.sellers.find(s => s.user_id === req.user.id);
   if (!seller) {
-    return res.status(403).json({ error: "Forbidden: No merchant store registered for this user" });
+    return res.status(403).json({
+      error: "FORBIDDEN",
+      message: "No merchant store profile registered for this account."
+    });
   }
 
-  if (req.user.role !== 'admin' && seller.user_id !== req.user.id) {
-    return res.status(403).json({ error: "Forbidden: You cannot create a listing under another merchant's profile" });
-  }
-
-  const sanitizedTitle = sanitizeText(title);
+  const sanitizedTitle = sanitizeText(title || body.title);
   const slug = sanitizedTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Math.floor(Math.random() * 10000);
 
   const newListing: Listing = {
     id: `list-${Date.now()}`,
     seller_id: seller.id,
-    category_id,
+    category_id: category_id || body.category_id,
     title: sanitizedTitle,
     slug,
     brand: sanitizeText(brand) || 'Generic',
     model: sanitizeText(model) || '',
-    condition: condition === 'used' ? 'working_used' : (condition || 'working_used'),
-    price: Number(price),
-    currency: currency || 'NGN',
+    condition: condition === 'used' ? 'working_used' : (condition || body.condition || 'working_used'),
+    price: Number(price || body.price),
+    currency: currency || body.currency || 'NGN',
     negotiable: negotiable ?? true,
     country: 'Nigeria',
-    state: sanitizeText(state) || 'Lagos',
+    state: sanitizeText(state || body.state) || 'Lagos',
     city: sanitizeText(city) || 'Ikeja',
-    description: sanitizeText(description) || '',
+    description: sanitizeText(description || body.description) || '',
     status: 'pending_review',
     featured: false,
     stock_status: 'in_stock',
@@ -175,10 +175,15 @@ listingsRouter.patch("/api/listings/:id", requireAuth, requireListingOwnerOrAdmi
   const { id } = req.params;
   const index = collections.listings.findIndex(l => l.id === id);
   if (index === -1) {
-    return res.status(404).json({ error: "Listing not found" });
+    return res.status(404).json({ error: "NOT_FOUND", message: "Listing not found" });
   }
 
-  const updateData = { ...req.body };
+  const updateData = { ...req.validatedBody, ...req.body };
+  // Remove client identity overrides if attempted
+  delete updateData.seller_id;
+  delete updateData.seller_name;
+  delete updateData.seller_verified;
+
   if (updateData.title) updateData.title = sanitizeText(updateData.title);
   if (updateData.brand) updateData.brand = sanitizeText(updateData.brand);
   if (updateData.model) updateData.model = sanitizeText(updateData.model);
@@ -202,7 +207,7 @@ listingsRouter.delete("/api/listings/:id", requireAuth, requireListingOwnerOrAdm
   const index = collections.listings.findIndex(l => l.id === id);
   
   if (index === -1) {
-    return res.status(404).json({ error: "Listing not found" });
+    return res.status(404).json({ error: "NOT_FOUND", message: "Listing not found" });
   }
 
   const listing = collections.listings[index];
@@ -217,7 +222,7 @@ listingsRouter.post("/api/listings/:id/track-whatsapp-click", (req, res) => {
   const { id } = req.params;
   const listing = collections.listings.find(l => l.id === id);
   if (!listing) {
-    return res.status(404).json({ error: "Listing not found" });
+    return res.status(404).json({ error: "NOT_FOUND", message: "Listing not found" });
   }
 
   listing.whatsapp_click_count += 1;
@@ -232,14 +237,14 @@ listingsRouter.post("/api/listings/:id/report", (req, res) => {
   const listing = collections.listings.find(l => l.id === id);
   
   if (!listing) {
-    return res.status(404).json({ error: "Listing not found" });
+    return res.status(404).json({ error: "NOT_FOUND", message: "Listing not found" });
   }
 
   const newReport: Report = {
     id: `rep-${Date.now()}`,
     reporter_id: 'usr-anonymous',
     listing_id: id,
-    reason: reason || 'Suspicious user or price misrepresentation',
+    reason: sanitizeText(reason) || 'Suspicious user or price misrepresentation',
     status: 'pending',
     created_at: new Date().toISOString(),
     listing_title: listing.title

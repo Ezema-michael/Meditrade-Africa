@@ -10,22 +10,23 @@ import { collections } from './serverDb';
 // ZOD SCHEMAS FOR API INPUT VALIDATION
 // ==========================================
 
-export const SyncUserSchema = z.object({
-  firebase_uid: z.string().optional(),
-  email: z.string().email('Invalid email address'),
-  phone: z.string().optional(),
-  role: z.enum(['seller', 'buyer', 'admin', 'engineer']).optional()
-});
-
+// RegisterUserSchema only allows public roles: 'buyer' or 'seller'
 export const RegisterUserSchema = z.object({
   email: z.string().email('Invalid email address'),
   phone: z.string().optional(),
-  role: z.enum(['seller', 'buyer', 'admin', 'engineer']).optional(),
-  business_name: z.string().optional(),
+  role: z.enum(['seller', 'buyer']),
+  business_name: z.string().min(2, 'Business or hospital name required').optional(),
   state: z.string().optional(),
   address: z.string().optional()
-});
+}).strict();
 
+export const SyncUserSchema = z.object({
+  firebase_uid: z.string().optional(),
+  email: z.string().email('Invalid email address'),
+  phone: z.string().optional()
+}).strict();
+
+// CreateListingSchema - privileged user/seller identity fields removed!
 export const CreateListingSchema = z.object({
   title: z.string().min(2, 'Title must be at least 2 characters'),
   category_id: z.string().min(1, 'Category ID is required'),
@@ -37,9 +38,7 @@ export const CreateListingSchema = z.object({
   description: z.string().optional(),
   image_url: z.string().optional(),
   technical_specs: z.record(z.string(), z.any()).optional(),
-  warranty_months: z.union([z.number(), z.string()]).optional(),
-  seller_id: z.string().optional(),
-  seller_name: z.string().optional()
+  warranty_months: z.union([z.number(), z.string()]).optional()
 });
 
 export const UpdateListingSchema = CreateListingSchema.partial();
@@ -62,8 +61,7 @@ export const CreateRfqSchema = z.object({
 });
 
 export const SubmitQuoteSchema = z.object({
-  request_id: z.string().optional(),
-  seller_id: z.string().optional(),
+  request_id: z.string().min(1, 'Request ID is required'),
   price: z.union([z.number(), z.string().transform(v => Number(v))]),
   message: z.string().optional(),
   availability: z.string().optional(),
@@ -73,7 +71,6 @@ export const SubmitQuoteSchema = z.object({
 
 export const CreateEscrowSchema = z.object({
   listing_id: z.string().min(1, 'Listing ID is required'),
-  buyer_id: z.string().optional(),
   amount: z.union([z.number(), z.string().transform(v => Number(v))]),
   buyer_name: z.string().optional(),
   buyer_email: z.string().optional(),
@@ -89,7 +86,6 @@ export const ApplyFinancingSchema = z.object({
   equipment_price: z.union([z.number(), z.string()]).optional(),
   down_payment: z.union([z.number(), z.string()]).optional(),
   tenure_months: z.union([z.number(), z.string()]).optional(),
-  buyer_id: z.string().optional(),
   cac_registration: z.string().optional(),
   medical_license: z.string().optional(),
   monthly_patient_volume: z.union([z.number(), z.string()]).optional()
@@ -97,37 +93,43 @@ export const ApplyFinancingSchema = z.object({
 
 export const ReviewSchema = z.object({
   rating: z.union([z.number().min(1).max(5), z.string().transform(v => Number(v))]),
-  reviewer_name: z.string().optional(),
   comment: z.string().optional()
 });
 
 export const VerificationRequestSchema = z.object({
-  seller_id: z.string().optional(),
   cac_number: z.string().min(2, 'CAC registration number is required'),
   document_url: z.string().optional()
 });
 
 export const CreateOfferSchema = z.object({
   listing_id: z.string().min(1, 'Listing ID is required'),
-  buyer_id: z.string().optional(),
   buyer_name: z.string().optional(),
   buyer_contact: z.string().optional(),
-  offer_amount: z.union([z.number(), z.string().transform(v => Number(v))]).optional(),
-  amount: z.union([z.number(), z.string().transform(v => Number(v))]).optional(),
+  amount: z.union([z.number(), z.string().transform(v => Number(v))]),
   currency: z.string().optional(),
-  message: z.string().optional(),
-  notes: z.string().optional()
+  message: z.string().optional()
+});
+
+export const EngineerApplicationSchema = z.object({
+  full_name: z.string().min(2, 'Full name is required'),
+  email: z.string().email('Invalid email'),
+  phone: z.string().min(5, 'Phone number is required'),
+  specialty: z.string().min(2, 'Specialty is required'),
+  years_experience: z.number().min(0),
+  certification_body: z.string().optional(),
+  coverage_states: z.array(z.string()).optional()
 });
 
 // ==========================================
-// VALIDATION MIDDLEWARE
+// VALIDATION MIDDLEWARES
 // ==========================================
 
 export const validateBody = (schema: z.ZodSchema) => (req: any, res: any, next: any) => {
   const result = schema.safeParse(req.body);
   if (!result.success) {
     return res.status(400).json({
-      error: 'Validation error',
+      error: 'VALIDATION_ERROR',
+      message: 'The submitted data is invalid.',
       details: result.error.issues.map(e => `${e.path.join('.') || 'body'}: ${e.message}`)
     });
   }
@@ -135,16 +137,74 @@ export const validateBody = (schema: z.ZodSchema) => (req: any, res: any, next: 
   next();
 };
 
+export const validateParams = (schema: z.ZodSchema) => (req: any, res: any, next: any) => {
+  const result = schema.safeParse(req.params);
+  if (!result.success) {
+    return res.status(400).json({
+      error: 'VALIDATION_ERROR',
+      message: 'Invalid route parameters.',
+      details: result.error.issues.map(e => `${e.path.join('.') || 'param'}: ${e.message}`)
+    });
+  }
+  req.validatedParams = result.data;
+  next();
+};
+
+export const validateQuery = (schema: z.ZodSchema) => (req: any, res: any, next: any) => {
+  const result = schema.safeParse(req.query);
+  if (!result.success) {
+    return res.status(400).json({
+      error: 'VALIDATION_ERROR',
+      message: 'Invalid search query parameters.',
+      details: result.error.issues.map(e => `${e.path.join('.') || 'query'}: ${e.message}`)
+    });
+  }
+  req.validatedQuery = result.data;
+  next();
+};
+
 // ==========================================
-// ROLE & OWNERSHIP AUTHORIZATION MIDDLEWARE
+// ACCOUNT STATUS & ROLE AUTHORIZATION MIDDLEWARE
 // ==========================================
+
+export const requireActiveAccount = (req: any, res: any, next: any) => {
+  if (!req.user) {
+    return res.status(401).json({ error: 'UNAUTHORIZED', message: 'Authentication required' });
+  }
+  if (req.user.status === 'suspended' || req.user.status === 'disabled' || req.user.status === 'rejected') {
+    return res.status(403).json({ error: 'ACCOUNT_SUSPENDED', message: 'Your account is disabled or suspended.' });
+  }
+  next();
+};
+
+export const requireCompletedRegistration = (req: any, res: any, next: any) => {
+  if (!req.user) {
+    return res.status(401).json({ error: 'UNAUTHORIZED', message: 'Authentication required' });
+  }
+  if (req.user.role === 'guest' || req.user.status === 'pending_registration') {
+    return res.status(403).json({
+      error: 'ACCOUNT_REGISTRATION_REQUIRED',
+      message: 'Complete your MediTrade account registration before using this feature.'
+    });
+  }
+  next();
+};
 
 export const requireRole = (...allowedRoles: string[]) => (req: any, res: any, next: any) => {
   if (!req.user) {
-    return res.status(401).json({ error: 'Authentication required' });
+    return res.status(401).json({ error: 'UNAUTHORIZED', message: 'Authentication required' });
+  }
+  if (req.user.role === 'guest' || req.user.status === 'pending_registration') {
+    return res.status(403).json({
+      error: 'ACCOUNT_REGISTRATION_REQUIRED',
+      message: 'Complete your MediTrade account registration before using this feature.'
+    });
   }
   if (!allowedRoles.includes(req.user.role)) {
-    return res.status(403).json({ error: `Forbidden: Requires one of roles: ${allowedRoles.join(', ')}` });
+    return res.status(403).json({
+      error: 'FORBIDDEN',
+      message: 'You are not authorized to perform this action.'
+    });
   }
   next();
 };
@@ -153,37 +213,51 @@ export const requireAdmin = requireRole('admin');
 
 export const requireListingOwnerOrAdmin = (req: any, res: any, next: any) => {
   if (!req.user) {
-    return res.status(401).json({ error: 'Authentication required' });
-  }
-  const listingId = req.params.id;
-  const listing = collections.listings.find(l => l.id === listingId);
-  if (!listing) {
-    return res.status(404).json({ error: 'Listing not found' });
+    return res.status(401).json({ error: 'UNAUTHORIZED', message: 'Authentication required' });
   }
   if (req.user.role === 'admin') {
+    const listing = collections.listings.find(l => l.id === req.params.id);
+    if (!listing) return res.status(404).json({ error: 'NOT_FOUND', message: 'Listing not found' });
     req.targetListing = listing;
     return next();
   }
-  const seller = collections.sellers.find(s => s.user_id === req.user.id || s.id === listing.seller_id);
-  if (!seller || (seller.user_id !== req.user.id && listing.seller_id !== seller.id)) {
-    return res.status(403).json({ error: 'Forbidden: You do not own this listing' });
+
+  const seller = collections.sellers.find(s => s.user_id === req.user.id);
+  const listing = collections.listings.find(l => l.id === req.params.id);
+
+  if (!listing) {
+    return res.status(404).json({ error: 'NOT_FOUND', message: 'Listing not found' });
   }
+
+  if (!seller || seller.id !== listing.seller_id) {
+    return res.status(403).json({
+      error: 'FORBIDDEN',
+      message: 'You are not authorized to perform this action.'
+    });
+  }
+
   req.targetListing = listing;
   next();
 };
 
 export const requireVendorOwnerOrAdmin = (req: any, res: any, next: any) => {
   if (!req.user) {
-    return res.status(401).json({ error: 'Authentication required' });
+    return res.status(401).json({ error: 'UNAUTHORIZED', message: 'Authentication required' });
   }
-  const vendorId = req.params.id;
   if (req.user.role === 'admin') {
     return next();
   }
-  const seller = collections.sellers.find(s => s.id === vendorId || s.user_id === req.user.id);
+
+  const vendorId = req.params.id;
+  const seller = collections.sellers.find(s => s.id === vendorId);
+
   if (!seller || seller.user_id !== req.user.id) {
-    return res.status(403).json({ error: 'Forbidden: You do not own this vendor profile' });
+    return res.status(403).json({
+      error: 'FORBIDDEN',
+      message: 'You are not authorized to perform this action.'
+    });
   }
+
   next();
 };
 
@@ -194,6 +268,10 @@ export const requireVendorOwnerOrAdmin = (req: any, res: any, next: any) => {
 export const asyncHandler = (fn: Function) => (req: any, res: any, next: any) => {
   Promise.resolve(fn(req, res, next)).catch((err) => {
     console.error('API execution error:', err);
-    res.status(500).json({ error: 'Internal Server Error: ' + (err.message || 'Operation failed') });
+    res.status(500).json({
+      error: 'SERVER_ERROR',
+      message: 'An unexpected error occurred.',
+      correlationId: req.id || undefined
+    });
   });
 };

@@ -142,7 +142,7 @@ adminRouter.get("/api/admin/vendors", requireAuth, requireAdmin, (req, res) => {
 adminRouter.patch("/api/admin/vendors/:id/status", requireAuth, requireAdmin, asyncHandler(async (req: any, res: any) => {
   const { status, verification_status } = req.body;
   const seller = collections.sellers.find(s => s.id === req.params.id);
-  if (!seller) return res.status(404).json({ error: "Vendor not found" });
+  if (!seller) return res.status(404).json({ error: "NOT_FOUND", message: "Vendor not found" });
 
   if (verification_status) seller.verification_status = verification_status;
   if (status) {
@@ -171,7 +171,7 @@ adminRouter.patch("/api/admin/vendors/:id/status", requireAuth, requireAdmin, as
 // Admin Delete / Remove Vendor
 adminRouter.delete("/api/admin/vendors/:id", requireAuth, requireAdmin, asyncHandler(async (req: any, res: any) => {
   const index = collections.sellers.findIndex(s => s.id === req.params.id);
-  if (index === -1) return res.status(404).json({ error: "Vendor not found" });
+  if (index === -1) return res.status(404).json({ error: "NOT_FOUND", message: "Vendor not found" });
 
   const deleted = collections.sellers.splice(index, 1)[0];
   await deleteFromFirestore('sellers', deleted.id);
@@ -213,7 +213,7 @@ adminRouter.get("/api/admin/equipments", requireAuth, requireAdmin, (req, res) =
 // Admin Edit Equipment / Update Status directly
 adminRouter.patch("/api/admin/equipments/:id", requireAuth, requireAdmin, asyncHandler(async (req: any, res: any) => {
   const index = collections.listings.findIndex(l => l.id === req.params.id);
-  if (index === -1) return res.status(404).json({ error: "Equipment not found" });
+  if (index === -1) return res.status(404).json({ error: "NOT_FOUND", message: "Equipment not found" });
 
   const current = collections.listings[index];
   const updated = {
@@ -231,7 +231,7 @@ adminRouter.patch("/api/admin/equipments/:id", requireAuth, requireAdmin, asyncH
 // Admin Delete Equipment
 adminRouter.delete("/api/admin/equipments/:id", requireAuth, requireAdmin, asyncHandler(async (req: any, res: any) => {
   const index = collections.listings.findIndex(l => l.id === req.params.id);
-  if (index === -1) return res.status(404).json({ error: "Equipment not found" });
+  if (index === -1) return res.status(404).json({ error: "NOT_FOUND", message: "Equipment not found" });
 
   const deleted = collections.listings.splice(index, 1)[0];
   await deleteFromFirestore('listings', deleted.id);
@@ -281,8 +281,8 @@ adminRouter.get("/api/admin/engagement-analytics", requireAuth, requireAdmin, (r
   });
 });
 
-// GET complete database snapshot for live diagnostics/auditing
-adminRouter.get("/api/diagnostics/schema", (req, res) => {
+// GET complete database snapshot for live diagnostics/auditing (ADMIN ONLY)
+adminRouter.get("/api/diagnostics/schema", requireAuth, requireAdmin, (req, res) => {
   res.json({
     metrics: {
       listings_count: collections.listings.length,

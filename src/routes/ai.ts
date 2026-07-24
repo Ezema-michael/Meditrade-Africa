@@ -6,14 +6,14 @@
 import { Router } from "express";
 import { GoogleGenAI, Type } from "@google/genai";
 import { collections } from "../server/state";
-import { criticalLimiter } from "../server/middleware";
+import { requireAuth, criticalLimiter } from "../server/middleware";
 import { logActivity } from "../lib/auditLogger";
 
 export const aiRouter = Router();
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-aiRouter.post("/api/ai/extract-listing", criticalLimiter, async (req, res) => {
+aiRouter.post("/api/ai/extract-listing", requireAuth, criticalLimiter, async (req, res) => {
   const { message } = req.body;
   if (!message || message.trim() === '') {
     return res.status(400).json({ error: "Paste raw WhatsApp seller text to scan with Google AI." });
@@ -83,7 +83,7 @@ Analyze raw hospital trading text and return a beautifully structured JSON with 
   }
 });
 
-aiRouter.post("/api/ai/improve-description", criticalLimiter, async (req, res) => {
+aiRouter.post("/api/ai/improve-description", requireAuth, criticalLimiter, async (req, res) => {
   const { description } = req.body;
   if (!description) return res.status(400).json({ error: "Description is empty" });
 
@@ -98,7 +98,7 @@ aiRouter.post("/api/ai/improve-description", criticalLimiter, async (req, res) =
   }
 });
 
-aiRouter.post("/api/ai/classify-category", criticalLimiter, async (req, res) => {
+aiRouter.post("/api/ai/classify-category", requireAuth, criticalLimiter, async (req, res) => {
   const { title } = req.body;
   if (!title) return res.status(400).json({ error: "Title is empty" });
 
@@ -116,7 +116,7 @@ aiRouter.post("/api/ai/classify-category", criticalLimiter, async (req, res) => 
   }
 });
 
-aiRouter.post("/api/ai/detect-duplicate", criticalLimiter, async (req, res) => {
+aiRouter.post("/api/ai/detect-duplicate", requireAuth, criticalLimiter, async (req, res) => {
   const { title, details } = req.body;
   if (!title) return res.status(400).json({ error: "Product title is required to test duplicates." });
 
@@ -154,7 +154,7 @@ aiRouter.post("/api/ai/detect-duplicate", criticalLimiter, async (req, res) => {
   }
 });
 
-aiRouter.post("/api/ai/match-procurement", criticalLimiter, async (req, res) => {
+aiRouter.post("/api/ai/match-procurement", requireAuth, criticalLimiter, async (req, res) => {
   const { listing_id } = req.body;
   const listing = collections.listings.find(l => l.id === listing_id);
   if (!listing) return res.status(404).json({ error: "Product listing not found" });
@@ -192,7 +192,7 @@ aiRouter.post("/api/ai/match-procurement", criticalLimiter, async (req, res) => 
   }
 });
 
-aiRouter.post("/api/ai/compare-devices", criticalLimiter, async (req, res) => {
+aiRouter.post("/api/ai/compare-devices", requireAuth, criticalLimiter, async (req, res) => {
   const { devices, facility_context } = req.body;
   if (!devices || !Array.isArray(devices) || devices.length < 2) {
     return res.status(400).json({ error: "Please select at least 2 medical devices to compare." });
@@ -201,7 +201,7 @@ aiRouter.post("/api/ai/compare-devices", criticalLimiter, async (req, res) => {
   try {
     const facility = facility_context || "General Secondary Hospital / Clinical Facility";
     const deviceSpecsText = devices.map((d: any, idx: number) => {
-      return `Device #${idx + 1}: ID: "${d.id}", Title: "${d.title}", Brand: "${d.brand || 'N/A'}", Model: "${d.model || 'N/A'}", Condition: "${d.condition}", Price: ${d.price} ${d.currency || 'NGN'}, Category: "${d.category_name || d.category_id || 'Medical Equipment'}", State: "${d.state || 'Lagos'}", Description: "${d.description || 'N/A'}"`;
+      return `Device #${idx + 1}: ID: "${d.id}", Title: "${d.title}", Brand: "${d.brand || 'N/A'}", Model: "${d.model || 'N/A'}", Condition: "${d.condition}", Price: ${d.price} ${d.currency || 'NGN'}", Category: "${d.category_name || d.category_id || 'Medical Equipment'}", State: "${d.state || 'Lagos'}", Description: "${d.description || 'N/A'}"`;
     }).join("\n\n");
 
     const systemInstruction = `You are a Senior Clinical Engineering Specialist & Hospital Procurement Advisor in West Africa with 20+ years of biomedical experience.

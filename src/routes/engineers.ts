@@ -5,8 +5,13 @@
 
 import { Router } from "express";
 import { collections, saveToFirestore } from "../server/state";
-import { requireAuth } from "../server/middleware";
-import { ReviewSchema, validateBody, asyncHandler } from "../lib/validation";
+import { requireAuth, sanitizeText } from "../server/middleware";
+import { 
+  ReviewSchema, 
+  validateBody, 
+  requireCompletedRegistration,
+  asyncHandler 
+} from "../lib/validation";
 import { logActivity } from "../lib/auditLogger";
 import { Engineer, EngineerReview } from "../types";
 
@@ -44,18 +49,18 @@ engineersRouter.get("/api/engineers/:id/reviews", (req, res) => {
 });
 
 // POST /api/engineers/:id/reviews - Submit a review for an engineer
-engineersRouter.post("/api/engineers/:id/reviews", requireAuth, validateBody(ReviewSchema), asyncHandler(async (req: any, res: any) => {
+engineersRouter.post("/api/engineers/:id/reviews", requireAuth, requireCompletedRegistration, validateBody(ReviewSchema), asyncHandler(async (req: any, res: any) => {
   const engineerId = req.params.id;
-  const { reviewer_id, reviewer_name, reviewer_business, rating, comment } = req.body;
+  const { reviewer_name, reviewer_business, rating, comment } = req.validatedBody;
 
   const newReview: EngineerReview = {
     id: `rev-${Date.now()}`,
     engineer_id: engineerId,
-    reviewer_id: reviewer_id || req.user.id,
-    reviewer_name,
-    reviewer_business: reviewer_business || "Clinical Practitioner",
+    reviewer_id: req.user.id,
+    reviewer_name: sanitizeText(reviewer_name) || req.user.email || 'Clinical Practitioner',
+    reviewer_business: sanitizeText(reviewer_business) || "Clinical Practitioner",
     rating: Number(rating),
-    comment,
+    comment: sanitizeText(comment),
     created_at: new Date().toISOString()
   };
 
@@ -72,77 +77,81 @@ engineersRouter.post("/api/engineers/:id/reviews", requireAuth, validateBody(Rev
     await saveToFirestore('engineers', engineer.id, engineer);
   }
 
-  logActivity(reviewer_name, 'SUBMIT_REVIEW', 'Engineer', `Submitted a ${rating}-star review for engineer ${engineer?.name || engineerId}`);
+  logActivity(req.user.email, 'SUBMIT_REVIEW', 'Engineer', `Submitted a ${rating}-star review for engineer ${engineer?.name || engineerId}`);
 
   res.status(201).json(newReview);
 }));
 
-// POST /api/engineers - Create/Register an engineer profile
+// POST /api/engineers - Create/Register an engineer profile (Admin or Engineer role)
 engineersRouter.post("/api/engineers", requireAuth, asyncHandler(async (req: any, res: any) => {
+  if (req.user.role !== 'admin' && req.user.role !== 'engineer') {
+    return res.status(403).json({ error: "FORBIDDEN", message: "Only engineers or administrators can create engineer profiles." });
+  }
+
   const { name, specialty, experience_years, phone, email, state, city, bio, services_offered, avatar_url } = req.body;
 
   if (!name || !specialty || !phone || !email || !state || !city || !bio) {
-    return res.status(400).json({ error: "Required fields are missing: name, specialty, phone, email, state, city, bio." });
+    return res.status(400).json({ error: "VALIDATION_ERROR", message: "Required fields missing: name, specialty, phone, email, state, city, bio." });
   }
+
+  const cleanName = sanitizeText(name);
 
   const newEngineer: Engineer = {
     id: `eng-${Date.now()}`,
-    name,
-    specialty,
+    name: cleanName,
+    specialty: sanitizeText(specialty),
     experience_years: Number(experience_years) || 1,
-    phone,
-    email,
-    state,
-    city,
-    bio,
+    phone: sanitizeText(phone),
+    email: sanitizeText(email),
+    state: sanitizeText(state),
+    city: sanitizeText(city),
+    bio: sanitizeText(bio),
     avatar_url: avatar_url || 'https://images.unsplash.com/photo-1537368910025-700350fe46c7?w=300&auto=format&fit=crop&q=80',
     verified_status: 'unverified',
     average_rating: 0,
-    services_offered: Array.isArray(services_offered) ? services_offered : [],
+    services_offered: Array.isArray(services_offered) ? services_offered.map(sanitizeText) : [],
     created_at: new Date().toISOString()
   };
 
   collections.engineers.unshift(newEngineer);
   await saveToFirestore('engineers', newEngineer.id, newEngineer);
-  logActivity(name, 'REGISTER_ENGINEER', 'Engineer', `Created a new medical engineer profile: ${name}`);
+  logActivity(cleanName, 'REGISTER_ENGINEER', 'Engineer', `Created a new medical engineer profile: ${cleanName}`);
 
   res.status(201).json(newEngineer);
 }));
 
-// Inspections
-engineersRouter.get("/api/inspections", (req, res) => {
-  const { buyer_id, seller_id, listing_id, engineer_id, status } = req.query;
+// Inspections GET
+engineersRouter.get("/api/inspections", requireAuth, (req: any, res: any) => {
   let filtered = [...collections.inspections];
 
-  if (buyer_id) {
-    filtered = filtered.filter(i => i.buyer_id === buyer_id);
+  if (req.user.role !== 'admin') {
+    const seller = collections.sellers.find(s => s.user_id === req.user.id);
+    const sellerId = seller?.id;
+    filtered = filtered.filter(i => i.buyer_id === req.user.id || (sellerId && i.seller_id === sellerId) || i.assigned_engineer_id === req.user.id);
   }
-  if (seller_id) {
-    filtered = filtered.filter(i => i.seller_id === seller_id);
-  }
-  if (listing_id) {
-    filtered = filtered.filter(i => i.listing_id === listing_id);
-  }
-  if (engineer_id) {
-    filtered = filtered.filter(i => i.assigned_engineer_id === engineer_id);
-  }
-  if (status) {
-    filtered = filtered.filter(i => i.status === status);
-  }
+
+  if (req.query.listing_id) filtered = filtered.filter(i => i.listing_id === req.query.listing_id);
+  if (req.query.status) filtered = filtered.filter(i => i.status === req.query.status);
 
   res.json(filtered);
 });
 
-engineersRouter.get("/api/inspections/:id", (req, res) => {
+engineersRouter.get("/api/inspections/:id", requireAuth, (req: any, res: any) => {
   const item = collections.inspections.find(i => i.id === req.params.id);
-  if (!item) return res.status(404).json({ error: "Inspection request not found" });
+  if (!item) return res.status(404).json({ error: "NOT_FOUND", message: "Inspection request not found" });
+
+  const seller = collections.sellers.find(s => s.user_id === req.user.id);
+  if (req.user.role !== 'admin' && item.buyer_id !== req.user.id && (!seller || seller.id !== item.seller_id) && item.assigned_engineer_id !== req.user.id) {
+    return res.status(403).json({ error: "FORBIDDEN", message: "Not authorized to view this inspection record." });
+  }
+
   res.json(item);
 });
 
-engineersRouter.post("/api/inspections/request", (req, res) => {
+// Request Inspection
+engineersRouter.post("/api/inspections/request", requireAuth, requireCompletedRegistration, asyncHandler(async (req: any, res: any) => {
   const {
     listing_id,
-    buyer_id,
     buyer_name,
     buyer_phone,
     buyer_email,
@@ -154,12 +163,12 @@ engineersRouter.post("/api/inspections/request", (req, res) => {
     link_escrow
   } = req.body;
 
-  if (!listing_id || !buyer_name || !buyer_phone) {
-    return res.status(400).json({ error: "Missing required inspection parameters" });
+  if (!listing_id) {
+    return res.status(400).json({ error: "VALIDATION_ERROR", message: "listing_id is required" });
   }
 
   const listing = collections.listings.find(l => l.id === listing_id);
-  if (!listing) return res.status(404).json({ error: "Medical equipment listing not found" });
+  if (!listing) return res.status(404).json({ error: "NOT_FOUND", message: "Medical equipment listing not found" });
 
   const seller = collections.sellers.find(s => s.id === listing.seller_id);
 
@@ -211,36 +220,8 @@ engineersRouter.post("/api/inspections/request", (req, res) => {
     }
   ];
 
-  let escrowDealId = undefined;
-
-  if (link_escrow !== false) {
-    let existingEscrow = collections.escrowDeals.find(d => d.listing_id === listing.id && d.buyer_id === (buyer_id || 'usr-5'));
-    if (!existingEscrow) {
-      existingEscrow = {
-        id: `esc-${Date.now()}`,
-        listing_id: listing.id,
-        listing_title: listing.title,
-        buyer_id: buyer_id || 'usr-5',
-        buyer_name: buyer_name,
-        buyer_email: buyer_email || 'buyer@hospital.ng',
-        seller_id: listing.seller_id,
-        seller_name: seller?.business_name || listing.seller_name || 'Medical Vendor',
-        amount: listing.price,
-        currency: listing.currency || 'NGN',
-        escrow_fee: Math.round(listing.price * 0.02),
-        status: 'initiated',
-        assigned_engineer_id: engineer?.id,
-        assigned_engineer_name: engineer ? `${engineer.name} (${engineer.specialty})` : 'Certified Biomedical Lead',
-        payment_reference: `ESC-2026-${Math.floor(10000 + Math.random() * 90000)}`,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
-      collections.escrowDeals.unshift(existingEscrow);
-    }
-    escrowDealId = existingEscrow.id;
-  }
-
   const inspectionFee = listing.price > 5000000 ? 120000 : 65000;
+  const cleanBuyerName = sanitizeText(buyer_name) || req.user.email || 'Hospital Purchaser';
 
   const newInspection = {
     id: `insp-${Date.now()}`,
@@ -251,55 +232,50 @@ engineersRouter.post("/api/inspections/request", (req, res) => {
     listing_currency: listing.currency || 'NGN',
     seller_id: listing.seller_id,
     seller_name: seller?.business_name || listing.seller_name || 'Vendor',
-    buyer_id: buyer_id || 'usr-5',
-    buyer_name,
-    buyer_phone,
-    buyer_email: buyer_email || 'purchaser@hospital.ng',
-    hospital_name: hospital_name || buyer_name,
+    buyer_id: req.user.id,
+    buyer_name: cleanBuyerName,
+    buyer_phone: sanitizeText(buyer_phone) || req.user.phone || '+2348000000000',
+    buyer_email: sanitizeText(buyer_email) || req.user.email || 'purchaser@hospital.ng',
+    hospital_name: sanitizeText(hospital_name) || cleanBuyerName,
     assigned_engineer_id: engineer?.id || 'eng-1',
     assigned_engineer_name: engineer ? `${engineer.name} (${engineer.specialty})` : 'Engr. Emeka Okafor',
     assigned_engineer_phone: engineer?.phone || '+2348031112233',
-    inspection_location: inspection_location || `${seller?.city || listing.city || 'Lagos'}, ${seller?.state || listing.state || 'Lagos'} Warehouse Site`,
+    inspection_location: sanitizeText(inspection_location) || `${seller?.city || listing.city || 'Lagos'}, Warehouse Site`,
     scheduled_date: scheduled_date || new Date(Date.now() + 86400000 * 2).toISOString().split('T')[0],
     status: 'scheduled',
-    notes: notes || `Pre-purchase engineering audit requested on ${listing.condition.replace('_', ' ').toUpperCase()} unit prior to final payment settlement.`,
+    notes: sanitizeText(notes) || `Pre-purchase engineering audit requested on ${listing.title}.`,
     fee_amount: inspectionFee,
     escrow_linked: link_escrow !== false,
-    escrow_deal_id: escrowDealId,
     checklist: defaultChecklist,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
   };
 
   collections.inspections.unshift(newInspection);
+  await saveToFirestore('inspections', newInspection.id, newInspection);
 
-  logActivity(buyer_name, 'REQUEST_INSPECTION', 'BiomedicalAudit', `Requested pre-purchase engineering audit for "${listing.title}" with engineer ${newInspection.assigned_engineer_name}`);
-
-  collections.notifications.unshift({
-    id: `notif-${Date.now()}-insp-new`,
-    user_id: seller?.user_id || 'usr-1',
-    type: 'inspection_requested',
-    title: 'Pre-Purchase Audit Scheduled',
-    message: `${buyer_name} requested a Certified Biomedical Engineer audit for "${listing.title}". Scheduled engineer: ${newInspection.assigned_engineer_name}.`,
-    read: false,
-    created_at: new Date().toISOString()
-  });
+  logActivity(cleanBuyerName, 'REQUEST_INSPECTION', 'BiomedicalAudit', `Requested pre-purchase engineering audit for "${listing.title}"`);
 
   res.status(201).json(newInspection);
-});
+}));
 
-engineersRouter.post("/api/inspections/:id/submit-report", (req, res) => {
+// Submit Report
+engineersRouter.post("/api/inspections/:id/submit-report", requireAuth, asyncHandler(async (req: any, res: any) => {
   const { id } = req.params;
   const { checklist, verdict_notes, status } = req.body;
 
   const inspection = collections.inspections.find(i => i.id === id);
-  if (!inspection) return res.status(404).json({ error: "Inspection request not found" });
+  if (!inspection) return res.status(404).json({ error: "NOT_FOUND", message: "Inspection request not found" });
+
+  if (req.user.role !== 'admin' && req.user.role !== 'engineer' && inspection.assigned_engineer_id !== req.user.id) {
+    return res.status(403).json({ error: "FORBIDDEN", message: "Only the assigned engineer or admin can submit inspection reports." });
+  }
 
   if (checklist && Array.isArray(checklist)) {
     inspection.checklist = checklist;
   }
   if (verdict_notes) {
-    inspection.engineer_verdict_notes = verdict_notes;
+    inspection.engineer_verdict_notes = sanitizeText(verdict_notes);
   }
 
   const finalStatus = status || 'passed';
@@ -311,33 +287,8 @@ engineersRouter.post("/api/inspections/:id/submit-report", (req, res) => {
     inspection.certificate_no = `CERT-BIOMED-2026-${Math.floor(1000 + Math.random() * 9000)}`;
   }
 
-  if (inspection.escrow_deal_id) {
-    const deal = collections.escrowDeals.find(d => d.id === inspection.escrow_deal_id);
-    if (deal) {
-      deal.engineer_notes = `Biomedical Audit Result (${finalStatus.toUpperCase()}): ${verdict_notes || 'All calibration tests completed.'}`;
-      deal.engineer_approved = finalStatus === 'passed';
-      if (finalStatus === 'passed') {
-        deal.status = 'inspected_approved';
-      } else {
-        deal.status = 'disputed';
-      }
-      deal.updated_at = new Date().toISOString();
-    }
-  }
-
-  logActivity(inspection.assigned_engineer_name, 'COMPLETE_INSPECTION', 'BiomedicalAudit', `Submitted calibration report for ${inspection.listing_title}. Result: ${finalStatus.toUpperCase()}`);
-
-  collections.notifications.unshift({
-    id: `notif-${Date.now()}-insp-done`,
-    user_id: inspection.buyer_id,
-    type: 'inspection_completed',
-    title: finalStatus === 'passed' ? 'Pre-Purchase Audit PASSED! Certified' : 'Pre-Purchase Audit DEFECTS REPORTED',
-    message: finalStatus === 'passed' 
-      ? `Calibration certificate ${inspection.certificate_no} issued for "${inspection.listing_title}". Payment escrow cleared for settlement.`
-      : `Defects identified during pre-purchase inspection on "${inspection.listing_title}". Dispute raised in escrow custody.`,
-    read: false,
-    created_at: new Date().toISOString()
-  });
+  await saveToFirestore('inspections', inspection.id, inspection);
+  logActivity(req.user.email, 'COMPLETE_INSPECTION', 'BiomedicalAudit', `Submitted report for ${inspection.listing_title}. Result: ${finalStatus.toUpperCase()}`);
 
   res.json(inspection);
-});
+}));

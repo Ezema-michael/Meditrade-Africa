@@ -5,8 +5,14 @@
 
 import { Router } from "express";
 import { collections, saveToFirestore } from "../server/state";
-import { requireAuth } from "../server/middleware";
-import { VerificationRequestSchema, validateBody, asyncHandler } from "../lib/validation";
+import { requireAuth, sanitizeText } from "../server/middleware";
+import { 
+  VerificationRequestSchema, 
+  validateBody, 
+  requireVendorOwnerOrAdmin,
+  requireCompletedRegistration,
+  asyncHandler 
+} from "../lib/validation";
 import { logActivity } from "../lib/auditLogger";
 import { VerificationRequest } from "../types";
 
@@ -16,43 +22,40 @@ export const sellersRouter = Router();
 sellersRouter.get("/api/sellers/:id", (req, res) => {
   const seller = collections.sellers.find(s => s.id === req.params.id || s.user_id === req.params.id);
   if (!seller) {
-    return res.status(404).json({ error: "Seller registration details not found" });
+    return res.status(404).json({ error: "NOT_FOUND", message: "Seller registration details not found" });
   }
-  // Count current listings dynamically
   seller.active_listings_count = collections.listings.filter(l => l.seller_id === seller.id && l.status === 'published').length;
   res.json(seller);
 });
 
 // Sellers Update Profile
-sellersRouter.patch("/api/sellers/profile", (req, res) => {
-  const { seller_id, business_name, contact_name, whatsapp_number, phone_number, state, city, cac_number } = req.body;
-  const index = collections.sellers.findIndex(s => s.id === seller_id || s.user_id === seller_id);
+sellersRouter.patch("/api/sellers/profile", requireAuth, requireCompletedRegistration, asyncHandler(async (req: any, res: any) => {
+  const { business_name, contact_name, whatsapp_number, phone_number, state, city, cac_number } = req.body;
+  const seller = collections.sellers.find(s => s.user_id === req.user.id);
   
-  if (index === -1) {
-    return res.status(404).json({ error: "Seller profile not found." });
+  if (!seller) {
+    return res.status(404).json({ error: "NOT_FOUND", message: "Seller profile not found for this user." });
   }
 
-  collections.sellers[index] = {
-    ...collections.sellers[index],
-    business_name: business_name || collections.sellers[index].business_name,
-    contact_name: contact_name || collections.sellers[index].contact_name,
-    whatsapp_number: whatsapp_number || collections.sellers[index].whatsapp_number,
-    phone_number: phone_number || collections.sellers[index].phone_number,
-    state: state || collections.sellers[index].state,
-    city: city || collections.sellers[index].city,
-    cac_number: cac_number || collections.sellers[index].cac_number
-  };
+  if (business_name) seller.business_name = sanitizeText(business_name);
+  if (contact_name) seller.contact_name = sanitizeText(contact_name);
+  if (whatsapp_number) seller.whatsapp_number = sanitizeText(whatsapp_number);
+  if (phone_number) seller.phone_number = sanitizeText(phone_number);
+  if (state) seller.state = sanitizeText(state);
+  if (city) seller.city = sanitizeText(city);
+  if (cac_number) seller.cac_number = sanitizeText(cac_number);
 
-  saveToFirestore('sellers', collections.sellers[index].id, collections.sellers[index]);
-  res.json(collections.sellers[index]);
-});
+  await saveToFirestore('sellers', seller.id, seller);
+  res.json(seller);
+}));
 
 // Submit verification request
-sellersRouter.post("/api/sellers/verification", requireAuth, validateBody(VerificationRequestSchema), asyncHandler(async (req: any, res: any) => {
-  const { seller_id, cac_number, document_url } = req.body;
-  const seller = collections.sellers.find(s => s.id === seller_id || s.user_id === req.user.id);
+sellersRouter.post("/api/sellers/verification", requireAuth, requireCompletedRegistration, validateBody(VerificationRequestSchema), asyncHandler(async (req: any, res: any) => {
+  const { cac_number, document_url } = req.validatedBody;
+  const seller = collections.sellers.find(s => s.user_id === req.user.id);
+  
   if (!seller) {
-    return res.status(404).json({ error: "Seller not found" });
+    return res.status(404).json({ error: "NOT_FOUND", message: "Seller profile not found for this user." });
   }
 
   seller.verification_status = 'pending';
