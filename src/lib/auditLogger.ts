@@ -24,10 +24,10 @@ export function logAuditEvent(event: Omit<StructuredAuditEvent, 'id' | 'timestam
     actor: event.actor || 'System',
     action: event.action,
     category: event.category,
-    resource: event.resource,
+    ...(event.resource ? { resource: event.resource } : {}),
     description: event.description,
-    metadata: event.metadata,
-    ip: event.ip
+    ...(event.metadata ? { metadata: event.metadata } : {}),
+    ...(event.ip ? { ip: event.ip } : {})
   };
 
   // 1. Output structured JSON to stdout for Cloud Logging / SIEM SIEM ingestion

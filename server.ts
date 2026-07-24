@@ -31,14 +31,38 @@ app.use(helmet({
   contentSecurityPolicy: false,
   crossOriginEmbedderPolicy: false
 }));
-app.use(cors());
+
+// Restrict CORS policies to authorized origins
+const allowedOrigins = [
+  process.env.APP_URL,
+  process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim()) : []
+].flat().filter(Boolean) as string[];
+
+const corsOptions: cors.CorsOptions = {
+  origin: (origin, callback) => {
+    // Allow requests with no origin (such as mobile apps, curl, or same-origin)
+    if (!origin) return callback(null, true);
+    
+    if (
+      process.env.NODE_ENV !== 'production' ||
+      allowedOrigins.length === 0 ||
+      allowedOrigins.includes(origin)
+    ) {
+      return callback(null, true);
+    }
+    return callback(new Error('CORS policy violation: Origin not allowed'));
+  },
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Correlation-ID', 'X-Request-ID'],
+  credentials: true,
+  maxAge: 86400
+};
+
+app.use(cors(corsOptions));
 app.use(correlationIdMiddleware);
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 app.use(globalLimiter);
-
-// Serve uploads statically
-app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 
 // Mount modular API routers
 app.use(authRouter);

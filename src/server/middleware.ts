@@ -53,22 +53,63 @@ export const requireAuth = async (req: any, res: Response, next: NextFunction) =
 
   const token = header.substring(7);
 
-  // Local development auth bypass guard
+  // Local development / testing auth bypass guard (STRICTLY GUARDED FROM PRODUCTION)
   if (
-    process.env.NODE_ENV === 'development' &&
-    process.env.ENABLE_DEV_AUTH_BYPASS === 'true' &&
-    token === 'dev-admin-token'
+    process.env.NODE_ENV !== 'production' &&
+    process.env.ENABLE_DEV_AUTH_BYPASS === 'true'
   ) {
-    req.auth = { uid: 'dev-admin', email: 'dev-admin@meditrade.local' };
-    req.user = {
-      id: 'dev-admin',
-      firebase_uid: 'dev-admin',
-      email: 'dev-admin@meditrade.local',
-      role: 'admin',
-      status: 'active',
-      businessName: 'MediTrade Development Admin'
-    };
-    return next();
+    if (token === 'dev-admin-token') {
+      req.auth = { uid: 'f-uid-3', email: 'ezemamichael@gmail.com' };
+      req.user = collections.users.find(u => u.id === 'usr-3') || {
+        id: 'usr-3',
+        firebase_uid: 'f-uid-3',
+        email: 'ezemamichael@gmail.com',
+        role: 'admin',
+        status: 'active',
+        businessName: 'MediTrade Development Admin'
+      };
+      return next();
+    } else if (token === 'dev-seller1-token') {
+      req.auth = { uid: 'f-uid-1', email: 'chidi.obi@medlink.com.ng' };
+      req.user = collections.users.find(u => u.id === 'usr-1') || {
+        id: 'usr-1',
+        firebase_uid: 'f-uid-1',
+        email: 'chidi.obi@medlink.com.ng',
+        role: 'seller',
+        status: 'active'
+      };
+      return next();
+    } else if (token === 'dev-seller2-token') {
+      req.auth = { uid: 'f-uid-2', email: 'fatima@westafricamed.com' };
+      req.user = collections.users.find(u => u.id === 'usr-2') || {
+        id: 'usr-2',
+        firebase_uid: 'f-uid-2',
+        email: 'fatima@westafricamed.com',
+        role: 'seller',
+        status: 'active'
+      };
+      return next();
+    } else if (token === 'dev-buyer-token') {
+      req.auth = { uid: 'f-uid-5', email: 'buyer@riversidememorial.org' };
+      req.user = collections.users.find(u => u.id === 'usr-5') || {
+        id: 'usr-5',
+        firebase_uid: 'f-uid-5',
+        email: 'buyer@riversidememorial.org',
+        role: 'buyer',
+        status: 'active'
+      };
+      return next();
+    } else if (token === 'dev-pending-token') {
+      req.auth = { uid: 'f-uid-pending', email: 'pending@example.com' };
+      req.user = {
+        id: 'usr-pending',
+        firebase_uid: 'f-uid-pending',
+        email: 'pending@example.com',
+        role: 'guest',
+        status: 'pending_registration'
+      };
+      return next();
+    }
   }
 
   try {

@@ -6,6 +6,7 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { Storage } from '@google-cloud/storage';
 
 export interface StorageMetadata {
   uploaderUserId: string;
@@ -52,13 +53,23 @@ export async function scanFile(buffer: Buffer): Promise<{ clean: boolean; reason
 export class StorageService {
   private provider: string;
   private uploadsDir: string;
+  private bucketName: string | undefined;
+  private storageClient: Storage | null = null;
 
   constructor() {
     this.provider = process.env.STORAGE_PROVIDER || 'local';
+    this.bucketName = process.env.GCS_BUCKET_NAME;
     this.uploadsDir = path.join(process.cwd(), 'uploads');
     if (!fs.existsSync(this.uploadsDir)) {
       fs.mkdirSync(this.uploadsDir, { recursive: true });
     }
+  }
+
+  private getStorage(): Storage {
+    if (!this.storageClient) {
+      this.storageClient = new Storage();
+    }
+    return this.storageClient;
   }
 
   public async uploadFile(options: UploadOptions): Promise<StorageMetadata> {
@@ -68,15 +79,34 @@ export class StorageService {
     }
 
     const fileExt = this.getSafeExtension(options.detectedMimeType || options.mimeType);
-    const randomUuid = Math.random().toString(36).substring(2, 11) + Date.now().toString(36);
+    const randomUuid = crypto.randomBytes(8).toString('hex');
     const objectKey = `uploads/${Date.now()}-${randomUuid}.${fileExt}`;
     const sanitizedName = path.basename(options.originalFilename).replace(/[^a-zA-Z0-9_.-]/g, '_');
 
-    let publicUrl = '';
+    let documentUrl = '';
 
-    if (this.provider === 'gcs' && process.env.GCS_BUCKET_NAME) {
-      // In production GCS mode, save to Google Cloud Storage bucket
-      publicUrl = `https://storage.googleapis.com/${process.env.GCS_BUCKET_NAME}/${objectKey}`;
+    if (this.provider === 'gcs' && this.bucketName) {
+      // In real GCS mode, save to Google Cloud Storage bucket with private ACL
+      const bucket = this.getStorage().bucket(this.bucketName);
+      const file = bucket.file(objectKey);
+
+      await file.save(options.buffer, {
+        resumable: false,
+        contentType: options.detectedMimeType || options.mimeType,
+        metadata: {
+          metadata: {
+            uploaderUserId: options.userId,
+            originalFilename: sanitizedName,
+            entityType: options.entityType || '',
+            entityId: options.entityId || ''
+          }
+        },
+        validation: 'md5',
+        predefinedAcl: 'private' // Ensures uploaded document is strictly private
+      });
+
+      // Private document download route requiring authentication
+      documentUrl = `/api/files/download?key=${encodeURIComponent(objectKey)}`;
     } else {
       // Local storage fallback adapter
       const fullPath = path.join(process.cwd(), objectKey);
@@ -85,7 +115,7 @@ export class StorageService {
         fs.mkdirSync(parentDir, { recursive: true });
       }
       fs.writeFileSync(fullPath, options.buffer);
-      publicUrl = `/${objectKey}`;
+      documentUrl = `/api/files/download?key=${encodeURIComponent(objectKey)}`;
     }
 
     const metadata: StorageMetadata = {
@@ -98,14 +128,23 @@ export class StorageService {
       uploadDate: new Date().toISOString(),
       entityType: options.entityType,
       entityId: options.entityId,
-      publicUrl
+      publicUrl: documentUrl
     };
 
     return metadata;
   }
 
   public async deleteFile(objectKey: string): Promise<boolean> {
-    if (this.provider === 'local' || !process.env.GCS_BUCKET_NAME) {
+    if (this.provider === 'gcs' && this.bucketName) {
+      try {
+        const bucket = this.getStorage().bucket(this.bucketName);
+        await bucket.file(objectKey).delete();
+        return true;
+      } catch (err) {
+        console.error('Error deleting file from GCS:', err);
+        return false;
+      }
+    } else {
       const fullPath = path.join(process.cwd(), objectKey);
       if (fs.existsSync(fullPath)) {
         fs.unlinkSync(fullPath);
@@ -115,8 +154,18 @@ export class StorageService {
     return false;
   }
 
-  public async getSignedUrl(objectKey: string): Promise<string> {
-    return `/${objectKey}`;
+  public async getSignedUrl(objectKey: string, expiresMinutes: number = 60): Promise<string> {
+    if (this.provider === 'gcs' && this.bucketName) {
+      const bucket = this.getStorage().bucket(this.bucketName);
+      const file = bucket.file(objectKey);
+      const [signedUrl] = await file.getSignedUrl({
+        version: 'v4',
+        action: 'read',
+        expires: Date.now() + expiresMinutes * 60 * 1000
+      });
+      return signedUrl;
+    }
+    return `/api/files/download?key=${encodeURIComponent(objectKey)}`;
   }
 
   private getSafeExtension(mimeType: string): string {

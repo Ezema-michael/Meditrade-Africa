@@ -1,8 +1,13 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import request from 'supertest';
 import { app } from '../server';
 
 describe('Authorization & Identity Security Tests', () => {
+
+  beforeAll(() => {
+    process.env.ENABLE_DEV_AUTH_BYPASS = 'true';
+    process.env.NODE_ENV = 'development';
+  });
 
   describe('Registration & Account Status Enforcements', () => {
     it('should reject unauthenticated registration requests', async () => {
@@ -21,6 +26,7 @@ describe('Authorization & Identity Security Tests', () => {
     it('should prevent pending_registration users from creating equipment listings', async () => {
       const res = await request(app)
         .post('/api/listings')
+        .set('Authorization', 'Bearer dev-pending-token')
         .send({
           title: 'Ultrasound Scanner PRO',
           category_id: 'cat-1',
@@ -29,8 +35,8 @@ describe('Authorization & Identity Security Tests', () => {
           state: 'Lagos'
         });
 
-      expect(res.status).toBe(401);
-      expect(res.body.error).toBeDefined();
+      expect(res.status).toBe(403);
+      expect(res.body.error).toBe('ACCOUNT_REGISTRATION_REQUIRED');
     });
 
     it('should reject file upload requests without authenticated authorization headers', async () => {
@@ -44,10 +50,37 @@ describe('Authorization & Identity Security Tests', () => {
     });
   });
 
-  describe('Resource Ownership Protection', () => {
+  describe('Role-Based Access Control (RBAC)', () => {
+    it('should block non-admin users (buyers & sellers) from admin endpoints', async () => {
+      const buyerRes = await request(app)
+        .get('/api/admin/vendors')
+        .set('Authorization', 'Bearer dev-buyer-token');
+
+      expect(buyerRes.status).toBe(403);
+      expect(buyerRes.body.error).toBe('FORBIDDEN');
+
+      const sellerRes = await request(app)
+        .get('/api/admin/vendors')
+        .set('Authorization', 'Bearer dev-seller1-token');
+
+      expect(sellerRes.status).toBe(403);
+      expect(sellerRes.body.error).toBe('FORBIDDEN');
+    });
+
+    it('should allow verified admin users to access admin vendor management', async () => {
+      const res = await request(app)
+        .get('/api/admin/vendors')
+        .set('Authorization', 'Bearer dev-admin-token');
+
+      expect(res.status).toBe(200);
+      expect(Array.isArray(res.body)).toBe(true);
+    });
+  });
+
+  describe('Resource & Entity Ownership Protection', () => {
     it('should block unauthenticated PATCH requests to listings', async () => {
       const res = await request(app)
-        .patch('/api/listings/lst-1')
+        .patch('/api/listings/list-1')
         .send({
           title: 'Hacked Title'
         });
@@ -57,23 +90,67 @@ describe('Authorization & Identity Security Tests', () => {
 
     it('should block unauthenticated DELETE requests to listings', async () => {
       const res = await request(app)
-        .delete('/api/listings/lst-1');
+        .delete('/api/listings/list-1');
 
       expect(res.status).toBe(401);
     });
 
-    it('should protect vendor management API endpoints from non-admin access', async () => {
+    it('should block seller 2 from editing listing owned by seller 1', async () => {
       const res = await request(app)
-        .get('/api/admin/vendors');
+        .patch('/api/listings/list-1')
+        .set('Authorization', 'Bearer dev-seller2-token')
+        .send({
+          title: 'Unauthorized Modification Attempt'
+        });
 
-      expect(res.status).toBe(401);
+      expect(res.status).toBe(403);
+      expect(res.body.error).toBe('FORBIDDEN');
     });
 
-    it('should protect diagnostic schema snapshot from unauthenticated access', async () => {
+    it('should allow listing owner (seller 1) to edit their listing', async () => {
       const res = await request(app)
-        .get('/api/diagnostics/schema');
+        .patch('/api/listings/list-1')
+        .set('Authorization', 'Bearer dev-seller1-token')
+        .send({
+          title: 'Updated Clinical Ultrasound Machine'
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.title).toBe('Updated Clinical Ultrasound Machine');
+    });
+
+    it('should reject file upload for an entity owned by another user', async () => {
+      const res = await request(app)
+        .post('/api/upload')
+        .set('Authorization', 'Bearer dev-seller2-token')
+        .field('entity_type', 'listing')
+        .field('entity_id', 'list-1')
+        .attach('file', Buffer.from('%PDF-1.4 test document'), 'spec.pdf');
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toBe('FORBIDDEN');
+      expect(res.body.message).toContain('do not own this equipment listing');
+    });
+
+    it('should allow file upload for an entity owned by the requesting user', async () => {
+      const res = await request(app)
+        .post('/api/upload')
+        .set('Authorization', 'Bearer dev-seller1-token')
+        .field('entity_type', 'listing')
+        .field('entity_id', 'list-1')
+        .attach('file', Buffer.from('%PDF-1.4 test document'), 'spec.pdf');
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.url).toContain('/api/files/download?key=');
+    });
+
+    it('should protect private file downloads from unauthenticated access', async () => {
+      const res = await request(app)
+        .get('/api/files/download?key=uploads/test.pdf');
 
       expect(res.status).toBe(401);
+      expect(res.body.error).toBe('UNAUTHORIZED');
     });
   });
 

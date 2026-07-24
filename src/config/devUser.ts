@@ -23,6 +23,8 @@ export const isDevAdminEnabled = (): boolean => {
   const metaEnv = (import.meta as any).env;
   return (
     metaEnv?.DEV === true &&
+    metaEnv?.MODE !== 'production' &&
+    metaEnv?.PROD !== true &&
     metaEnv?.VITE_ENABLE_DEV_ADMIN === 'true'
   );
 };

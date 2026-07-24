@@ -250,6 +250,7 @@ export interface ChatMessage {
 
 export interface Engineer {
   id: string;
+  user_id?: string;
   name: string;
   specialty: string;
   experience_years: number;

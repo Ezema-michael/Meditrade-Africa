@@ -9,9 +9,10 @@
     "start": "node dist/server.cjs",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "NODE_ENV=test vitest run"
   },
   "dependencies": {
+    "@google-cloud/storage": "^7.21.0",
     "@google/genai": "^2.4.0",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
