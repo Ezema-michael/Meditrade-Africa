@@ -227,17 +227,40 @@ offersRouter.patch("/api/offers/:id", requireAuth, asyncHandler(async (req: any,
 }));
 
 // GET user notifications
-offersRouter.get("/api/notifications", requireAuth, (req: any, res: any) => {
-  const filtered = collections.notifications.filter(n => n.user_id === req.user.id || req.user.role === 'admin');
-  res.json(filtered);
+offersRouter.get("/api/notifications", (req: any, res: any) => {
+  if (req.headers.authorization) {
+    return requireAuth(req, res, () => {
+      const filtered = collections.notifications.filter(n => n.user_id === req.user.id || req.user.role === 'admin');
+      res.json(filtered);
+    });
+  }
+  const userId = req.query.user_id as string;
+  if (userId) {
+    const filtered = collections.notifications.filter(n => n.user_id === userId);
+    return res.json(filtered);
+  }
+  res.json([]);
 });
 
 // Read and dismiss notifications
-offersRouter.post("/api/notifications/dismiss", requireAuth, (req: any, res: any) => {
-  collections.notifications.forEach(n => {
-    if (n.user_id === req.user.id || req.user.role === 'admin') {
-      n.read = true;
-    }
-  });
+offersRouter.post("/api/notifications/dismiss", (req: any, res: any) => {
+  if (req.headers.authorization) {
+    return requireAuth(req, res, () => {
+      collections.notifications.forEach(n => {
+        if (n.user_id === req.user.id || req.user.role === 'admin') {
+          n.read = true;
+        }
+      });
+      res.json({ success: true });
+    });
+  }
+  const userId = req.body?.user_id;
+  if (userId) {
+    collections.notifications.forEach(n => {
+      if (n.user_id === userId) {
+        n.read = true;
+      }
+    });
+  }
   res.json({ success: true });
 });

@@ -173,6 +173,7 @@ export const collections = {
   leads: [] as Lead[],
   chats: [] as { id: string; lead_id: string; messages: ChatMessage[] }[],
   notifications: [] as any[],
+  fileMetadata: [] as any[],
   searchLogs: [
     { id: 'search-1', query: 'Ultrasound machine', category_id: 'cat-1', category_name: 'Ultrasound Machines', state: 'Lagos', condition: 'used', timestamp: new Date(Date.now() - 3600000 * 2).toISOString(), results_count: 3 },
     { id: 'search-2', query: 'Mindray uMec 12', category_id: 'cat-7', category_name: 'Patient Monitors', state: 'Abuja', condition: 'used', timestamp: new Date(Date.now() - 3600000 * 5).toISOString(), results_count: 1 },

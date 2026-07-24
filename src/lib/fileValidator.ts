@@ -63,6 +63,15 @@ export async function validateAndProcessFile(
     };
   }
 
+  // Explicit check for mismatch between claimed browser MIME type and detected magic bytes MIME
+  if (claimedMimeType && ALLOWED_MIME_TYPES.includes(claimedMimeType) && claimedMimeType !== detectedMime) {
+    return {
+      valid: false,
+      detectedMime,
+      error: `MIME type mismatch: claimed '${claimedMimeType}' does not match detected file header '${detectedMime}'.`
+    };
+  }
+
   // Size limit checks
   if (detectedMime === 'application/pdf') {
     if (fileBuffer.length > MAX_PDF_SIZE) {

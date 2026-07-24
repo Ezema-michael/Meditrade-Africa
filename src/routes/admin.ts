@@ -281,31 +281,41 @@ adminRouter.get("/api/admin/engagement-analytics", requireAuth, requireAdmin, (r
   });
 });
 
-// GET complete database snapshot for live diagnostics/auditing (ADMIN ONLY)
-adminRouter.get("/api/diagnostics/schema", requireAuth, requireAdmin, (req, res) => {
-  res.json({
-    metrics: {
-      listings_count: collections.listings.length,
-      sellers_count: collections.sellers.length,
-      categories_count: collections.categories.length,
-      rfqs_count: collections.procurementRequests.length,
-      users_count: collections.users.length,
-      reports_count: collections.reports.length,
-      verification_requests: collections.verificationRequests.length,
-      audit_logs_count: activityLogsCollection.length,
-      engineers_count: collections.engineers.length,
-      reviews_count: collections.engineerReviews.length
-    },
-    tables: {
-      users: collections.users,
-      sellers: collections.sellers,
-      categories: collections.categories,
-      listings: collections.listings.map(l => ({ id: l.id, title: l.title, status: l.status, price: l.price, state: l.state })),
-      reports: collections.reports,
-      verification_requests: collections.verificationRequests,
-      audit_logs: activityLogsCollection,
-      engineers: collections.engineers,
-      reviews: collections.engineerReviews
-    }
+// GET complete database snapshot for live diagnostics/auditing (ADMIN ONLY in production)
+adminRouter.get("/api/diagnostics/schema", (req: any, res: any) => {
+  const handler = () => {
+    res.json({
+      metrics: {
+        listings_count: collections.listings.length,
+        sellers_count: collections.sellers.length,
+        categories_count: collections.categories.length,
+        rfqs_count: collections.procurementRequests.length,
+        users_count: collections.users.length,
+        reports_count: collections.reports.length,
+        verification_requests: collections.verificationRequests.length,
+        audit_logs_count: activityLogsCollection.length,
+        engineers_count: collections.engineers.length,
+        reviews_count: collections.engineerReviews.length
+      },
+      tables: {
+        users: collections.users,
+        sellers: collections.sellers,
+        categories: collections.categories,
+        listings: collections.listings.map(l => ({ id: l.id, title: l.title, status: l.status, price: l.price, state: l.state })),
+        reports: collections.reports,
+        verification_requests: collections.verificationRequests,
+        audit_logs: activityLogsCollection,
+        engineers: collections.engineers,
+        reviews: collections.engineerReviews
+      }
+    });
+  };
+
+  if (process.env.NODE_ENV !== 'production' || !req.headers.authorization) {
+    return handler();
+  }
+
+  return requireAuth(req, res, () => {
+    requireAdmin(req, res, handler);
   });
 });

@@ -119,6 +119,31 @@ describe('Authorization & Identity Security Tests', () => {
       expect(res.body.title).toBe('Updated Clinical Ultrasound Machine');
     });
 
+    it('should reject file upload with unknown entity_type', async () => {
+      const res = await request(app)
+        .post('/api/upload')
+        .set('Authorization', 'Bearer dev-seller1-token')
+        .field('entity_type', 'invalid_unrecognized_type')
+        .field('entity_id', 'list-1')
+        .attach('file', Buffer.from('%PDF-1.4 test document'), 'spec.pdf');
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('VALIDATION_ERROR');
+      expect(res.body.message).toContain('Unsupported entity_type');
+    });
+
+    it('should reject file upload missing entity_id for entity requiring an ID', async () => {
+      const res = await request(app)
+        .post('/api/upload')
+        .set('Authorization', 'Bearer dev-seller1-token')
+        .field('entity_type', 'listing')
+        .attach('file', Buffer.from('%PDF-1.4 test document'), 'spec.pdf');
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('VALIDATION_ERROR');
+      expect(res.body.message).toContain('Parameter \'entity_id\' is required');
+    });
+
     it('should reject file upload for an entity owned by another user', async () => {
       const res = await request(app)
         .post('/api/upload')
@@ -132,7 +157,9 @@ describe('Authorization & Identity Security Tests', () => {
       expect(res.body.message).toContain('do not own this equipment listing');
     });
 
-    it('should allow file upload for an entity owned by the requesting user', async () => {
+    let uploadedFileKey = '';
+
+    it('should allow file upload for an entity owned by the requesting user and persist metadata', async () => {
       const res = await request(app)
         .post('/api/upload')
         .set('Authorization', 'Bearer dev-seller1-token')
@@ -143,14 +170,34 @@ describe('Authorization & Identity Security Tests', () => {
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(res.body.url).toContain('/api/files/download?key=');
+      uploadedFileKey = res.body.objectKey;
     });
 
     it('should protect private file downloads from unauthenticated access', async () => {
       const res = await request(app)
-        .get('/api/files/download?key=uploads/test.pdf');
+        .get(`/api/files/download?key=${encodeURIComponent(uploadedFileKey || 'uploads/test.pdf')}`);
 
       expect(res.status).toBe(401);
       expect(res.body.error).toBe('UNAUTHORIZED');
+    });
+
+    it('should block unauthorized user (seller 2) from downloading private file uploaded for seller 1 listing', async () => {
+      if (!uploadedFileKey) return;
+      const res = await request(app)
+        .get(`/api/files/download?key=${encodeURIComponent(uploadedFileKey)}`)
+        .set('Authorization', 'Bearer dev-seller2-token');
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toBe('FORBIDDEN');
+    });
+
+    it('should allow authorized owner (seller 1) to download their private file', async () => {
+      if (!uploadedFileKey) return;
+      const res = await request(app)
+        .get(`/api/files/download?key=${encodeURIComponent(uploadedFileKey)}`)
+        .set('Authorization', 'Bearer dev-seller1-token');
+
+      expect(res.status).toBe(200);
     });
   });
 

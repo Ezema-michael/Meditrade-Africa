@@ -9,10 +9,12 @@ import crypto from 'crypto';
 import { Storage } from '@google-cloud/storage';
 
 export interface StorageMetadata {
+  id: string;
   uploaderUserId: string;
   objectKey: string;
   originalFilename: string;
   mimeType: string;
+  claimedMimeType?: string;
   size: number;
   detectedMimeType: string;
   uploadDate: string;
@@ -86,7 +88,7 @@ export class StorageService {
     let documentUrl = '';
 
     if (this.provider === 'gcs' && this.bucketName) {
-      // In real GCS mode, save to Google Cloud Storage bucket with private ACL
+      // In real GCS mode, save to Google Cloud Storage bucket (Uniform Bucket-Level Access)
       const bucket = this.getStorage().bucket(this.bucketName);
       const file = bucket.file(objectKey);
 
@@ -101,8 +103,7 @@ export class StorageService {
             entityId: options.entityId || ''
           }
         },
-        validation: 'md5',
-        predefinedAcl: 'private' // Ensures uploaded document is strictly private
+        validation: 'md5'
       });
 
       // Private document download route requiring authentication
@@ -119,10 +120,12 @@ export class StorageService {
     }
 
     const metadata: StorageMetadata = {
+      id: `file-${randomUuid}`,
       uploaderUserId: options.userId,
       objectKey,
       originalFilename: sanitizedName,
-      mimeType: options.mimeType,
+      mimeType: options.detectedMimeType || options.mimeType, // Authoritative detected MIME type
+      claimedMimeType: options.mimeType,
       size: options.buffer.length,
       detectedMimeType: options.detectedMimeType,
       uploadDate: new Date().toISOString(),

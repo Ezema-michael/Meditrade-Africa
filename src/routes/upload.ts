@@ -7,8 +7,9 @@ import { Router } from "express";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import { z } from "zod";
 import { requireAuth } from "../server/middleware";
-import { collections } from "../server/state";
+import { collections, saveToFirestore } from "../server/state";
 import { logActivity } from "../lib/auditLogger";
 import { validateAndProcessFile, MAX_FILES_PER_UPLOAD } from "../lib/fileValidator";
 import { storageService } from "../server/services/storageService";
@@ -23,12 +24,28 @@ const memoryUpload = multer({
   }
 });
 
+export const AllowedEntityTypesEnum = z.enum([
+  'profile_avatar',
+  'listing',
+  'equipment',
+  'seller',
+  'vendor',
+  'store',
+  'procurement',
+  'rfq',
+  'offer',
+  'escrow',
+  'financing',
+  'engineer',
+  'inspection'
+]);
+
 /**
  * Validate upload entity ownership helper
  */
 export function validateUploadEntityOwnership(user: any, entityType?: string, entityId?: string): { allowed: boolean; message?: string } {
-  if (!entityType || !entityId) {
-    return { allowed: true };
+  if (!entityType) {
+    return { allowed: false, message: 'Upload entity type is required.' };
   }
 
   // Admin users have full platform authority
@@ -37,6 +54,23 @@ export function validateUploadEntityOwnership(user: any, entityType?: string, en
   }
 
   const sanitizedType = entityType.toLowerCase().trim();
+
+  // Validate allowed entity type enum
+  const parsedType = AllowedEntityTypesEnum.safeParse(sanitizedType);
+  if (!parsedType.success) {
+    return { allowed: false, message: `Unsupported upload entity type '${entityType}'.` };
+  }
+
+  if (sanitizedType === 'profile_avatar') {
+    if (!entityId || entityId === user.id) {
+      return { allowed: true };
+    }
+    return { allowed: false, message: 'You can only update your own profile avatar.' };
+  }
+
+  if (!entityId) {
+    return { allowed: false, message: `Entity ID is required for upload entity type '${sanitizedType}'.` };
+  }
 
   switch (sanitizedType) {
     case 'listing':
@@ -132,7 +166,10 @@ export function validateUploadEntityOwnership(user: any, entityType?: string, en
     }
 
     default:
-      return { allowed: true };
+      return {
+        allowed: false,
+        message: 'Unsupported or unclassified upload entity type.'
+      };
   }
 }
 
@@ -155,9 +192,33 @@ uploadRouter.post("/api/upload", requireAuth, memoryUpload.array("file", MAX_FIL
       });
     }
 
-    // Entity ownership validation
-    const entityType = req.body.entity_type;
+    // Entity ownership & strict classification validation
+    const entityTypeRaw = req.body.entity_type;
     const entityId = req.body.entity_id;
+
+    if (!entityTypeRaw || typeof entityTypeRaw !== 'string') {
+      return res.status(400).json({
+        error: "VALIDATION_ERROR",
+        message: "Missing required upload parameter 'entity_type'."
+      });
+    }
+
+    const entityType = entityTypeRaw.toLowerCase().trim();
+    const parsedType = AllowedEntityTypesEnum.safeParse(entityType);
+    if (!parsedType.success) {
+      return res.status(400).json({
+        error: "VALIDATION_ERROR",
+        message: `Unsupported entity_type '${entityTypeRaw}'. Allowed types: ${AllowedEntityTypesEnum.options.join(', ')}.`
+      });
+    }
+
+    if (entityType !== 'profile_avatar' && (!entityId || typeof entityId !== 'string' || !entityId.trim())) {
+      return res.status(400).json({
+        error: "VALIDATION_ERROR",
+        message: `Parameter 'entity_id' is required for upload entity type '${entityType}'.`
+      });
+    }
+
     const ownershipCheck = validateUploadEntityOwnership(req.user, entityType, entityId);
     if (!ownershipCheck.allowed) {
       return res.status(403).json({
@@ -192,6 +253,12 @@ uploadRouter.post("/api/upload", requireAuth, memoryUpload.array("file", MAX_FIL
         entityId
       });
 
+      // Persist storage metadata in memory and Firestore for authorization and audits
+      collections.fileMetadata.push(metadata);
+      saveToFirestore("file_metadata", metadata.id, metadata).catch(err => {
+        console.error("Failed to save file metadata to Firestore:", err);
+      });
+
       uploadResults.push({
         url: metadata.publicUrl,
         filename: metadata.originalFilename,
@@ -223,7 +290,7 @@ uploadRouter.post("/api/upload", requireAuth, memoryUpload.array("file", MAX_FIL
     console.error("Upload route error:", err);
     res.status(500).json({
       error: "UPLOAD_ERROR",
-      message: err.message || "An unexpected error occurred during file upload."
+      message: "An error occurred while processing the file upload."
     });
   }
 });
@@ -245,6 +312,32 @@ uploadRouter.get("/api/files/download", requireAuth, async (req: any, res: any) 
       return res.status(403).json({ error: "FORBIDDEN", message: "Invalid document path parameter." });
     }
 
+    // Look up file metadata to verify access rights
+    const metadata = collections.fileMetadata.find(f => f.objectKey === normalizedKey);
+
+    if (!metadata) {
+      // If file metadata is completely missing/unregistered, deny access
+      return res.status(404).json({ error: "NOT_FOUND", message: "Private document metadata not found." });
+    }
+
+    // Authorization check: User must be admin, file uploader, or authorized participant for the target entity
+    if (req.user.role !== 'admin' && metadata.uploaderUserId !== req.user.id) {
+      if (metadata.entityType && metadata.entityType !== 'profile_avatar') {
+        const check = validateUploadEntityOwnership(req.user, metadata.entityType, metadata.entityId);
+        if (!check.allowed) {
+          return res.status(403).json({
+            error: "FORBIDDEN",
+            message: check.message || "You are not authorized to access this document."
+          });
+        }
+      } else if (metadata.entityType !== 'profile_avatar') {
+        return res.status(403).json({
+          error: "FORBIDDEN",
+          message: "You are not authorized to access this private document."
+        });
+      }
+    }
+
     if (process.env.STORAGE_PROVIDER === 'gcs' && process.env.GCS_BUCKET_NAME) {
       const signedUrl = await storageService.getSignedUrl(normalizedKey, 15);
       return res.redirect(signedUrl);
@@ -252,12 +345,12 @@ uploadRouter.get("/api/files/download", requireAuth, async (req: any, res: any) 
 
     const fullPath = path.join(process.cwd(), normalizedKey);
     if (!fs.existsSync(fullPath)) {
-      return res.status(404).json({ error: "NOT_FOUND", message: "Private document not found." });
+      return res.status(404).json({ error: "NOT_FOUND", message: "Private document file not found on disk." });
     }
 
     res.sendFile(fullPath);
   } catch (err: any) {
     console.error("Download route error:", err);
-    res.status(500).json({ error: "STORAGE_ERROR", message: "Failed to serve requested document." });
+    res.status(500).json({ error: "STORAGE_ERROR", message: "An error occurred while serving requested document." });
   }
 });
