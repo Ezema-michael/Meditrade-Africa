@@ -16,13 +16,16 @@ import {
   FileVisibility,
   DEFAULT_VISIBILITY,
   saveFileMetadata,
-  getFileMetadataByObjectKey,
-  getFileMetadataById,
-  deleteFileMetadata
+  deleteFileMetadata,
+  removeFileMetadataFromCache,
+  getFileMetadataByIdAuthoritative,
+  getFileMetadataByObjectKeyAuthoritative,
+  MetadataUnavailableError
 } from "../lib/serverDb";
 import { logActivity, logAuditEvent } from "../lib/auditLogger";
 import { validateAndProcessFile, MAX_FILES_PER_UPLOAD } from "../lib/fileValidator";
 import { storageService } from "../server/services/storageService";
+import { getMalwareScanner } from "../server/services/malwareScanner";
 
 export const uploadRouter = Router();
 
@@ -226,8 +229,46 @@ export function canAccessFile(user: any, metadata: FileMetadata): { allowed: boo
   return { allowed: false, message: 'Access denied.' };
 }
 
+const handleMulterUpload = (req: any, res: any, next: any) => {
+  memoryUpload.array("file", MAX_FILES_PER_UPLOAD)(req, res, (err: any) => {
+    if (err) {
+      return res.status(400).json({
+        error: "VALIDATION_ERROR",
+        message: err.message || `Upload limit exceeded (max ${MAX_FILES_PER_UPLOAD} files per request).`
+      });
+    }
+    next();
+  });
+};
+
 // Transactional File Upload POST Endpoint
-uploadRouter.post("/api/upload", requireAuth, memoryUpload.array("file", MAX_FILES_PER_UPLOAD), async (req: any, res: any) => {
+uploadRouter.post("/api/upload", requireAuth, handleMulterUpload, async (req: any, res: any) => {
+  const completedUploads: Array<{ metadata: FileMetadata; objectKey: string }> = [];
+
+  const rollbackAllCompletedUploads = async () => {
+    for (const item of completedUploads.reverse()) {
+      try {
+        await storageService.deleteFile(item.objectKey);
+      } catch (err: any) {
+        console.error(`Rollback error deleting storage file ${item.objectKey}:`, err);
+      }
+      try {
+        await deleteFileMetadata(item.metadata.id);
+      } catch (err: any) {
+        console.error(`Rollback error deleting metadata document ${item.metadata.id}:`, err);
+      }
+      removeFileMetadataFromCache(item.metadata.id, item.objectKey);
+
+      logAuditEvent({
+        actor: req.user.email || req.user.id,
+        action: 'FILE_UPLOAD_BATCH_ROLLBACK',
+        category: 'Storage',
+        description: `Rolled back file ${item.metadata.originalFilename} (${item.objectKey}) due to batch failure`,
+        metadata: { metadataId: item.metadata.id, objectKey: item.objectKey }
+      });
+    }
+  };
+
   try {
     const files = req.files || (req.file ? [req.file] : []);
 
@@ -281,8 +322,45 @@ uploadRouter.post("/api/upload", requireAuth, memoryUpload.array("file", MAX_FIL
 
     const visibility: FileVisibility = DEFAULT_VISIBILITY[entityType] || 'owner_only';
     const uploadResults = [];
+    const scanner = getMalwareScanner();
 
     for (const file of files) {
+      // Step 1: Malware scanning
+      let scanResult;
+      try {
+        scanResult = await scanner.scan(file.buffer, file.originalname || 'file', file.mimetype || '');
+      } catch (scanErr: any) {
+        console.error("Malware scanner error:", scanErr);
+        await rollbackAllCompletedUploads();
+        logAuditEvent({
+          actor: req.user.email || req.user.id,
+          action: 'MALWARE_SCANNER_ERROR',
+          category: 'Security',
+          description: `Scanner service failure: ${scanErr.message}`,
+          metadata: { filename: file.originalname }
+        });
+        return res.status(500).json({
+          error: "SCANNER_ERROR",
+          message: "Malware scanning service unavailable."
+        });
+      }
+
+      if (!scanResult.clean) {
+        await rollbackAllCompletedUploads();
+        logAuditEvent({
+          actor: req.user.email || req.user.id,
+          action: 'MALWARE_DETECTED',
+          category: 'Security',
+          description: `Malware detected in file ${file.originalname}: ${scanResult.reason}`,
+          metadata: { filename: file.originalname, reason: scanResult.reason, engine: scanResult.engine }
+        });
+        return res.status(400).json({
+          error: "MALWARE_DETECTED",
+          message: scanResult.reason || "File failed security scan."
+        });
+      }
+
+      // Step 2: Validation
       const validation = await validateAndProcessFile(
         file.buffer,
         file.mimetype || '',
@@ -290,13 +368,14 @@ uploadRouter.post("/api/upload", requireAuth, memoryUpload.array("file", MAX_FIL
       );
 
       if (!validation.valid) {
+        await rollbackAllCompletedUploads();
         return res.status(400).json({
           error: "INVALID_FILE_TYPE",
           message: validation.error || "File validation failed."
         });
       }
 
-      // Step 1: Upload binary object to storage engine
+      // Step 3: Storage upload
       const storageMeta = await storageService.uploadFile({
         buffer: validation.processedBuffer || file.buffer,
         originalFilename: file.originalname || 'file',
@@ -323,36 +402,50 @@ uploadRouter.post("/api/upload", requireAuth, memoryUpload.array("file", MAX_FIL
         status: 'active'
       };
 
-      // Step 2: Transactional persistence of metadata
+      // Step 4: Durable metadata persistence
       try {
         await saveFileMetadata(fullFileMetadata);
       } catch (metaErr) {
-        // Compensating Transaction: Roll back uploaded storage file
-        console.error("File metadata persistence failed. Initiating compensating cleanup:", metaErr);
-        const rollbackSuccess = await storageService.deleteFile(storageMeta.objectKey);
+        console.error("File metadata persistence failed. Initiating compensating rollback:", metaErr);
+        // Delete current storage file
+        await storageService.deleteFile(storageMeta.objectKey).catch(() => {});
+        removeFileMetadataFromCache(fullFileMetadata.id, storageMeta.objectKey);
         
+        // Roll back previous uploaded files in this batch request
+        await rollbackAllCompletedUploads();
+
         logAuditEvent({
           actor: req.user.email || req.user.id,
           action: 'FILE_UPLOAD_ROLLBACK',
           category: 'Storage',
-          description: `Compensating rollback ${rollbackSuccess ? 'SUCCEEDED' : 'FAILED'} for object ${storageMeta.objectKey}`,
-          metadata: { objectKey: storageMeta.objectKey, rollbackSuccess }
+          description: `Batch upload failed during metadata persistence for object ${storageMeta.objectKey}`,
+          metadata: { objectKey: storageMeta.objectKey }
         });
 
         return res.status(500).json({
-          error: "FILE_METADATA_PERSISTENCE_FAILED",
+          error: "BATCH_UPLOAD_FAILED",
           message: "Failed to establish durable file metadata record. Upload rolled back."
         });
       }
 
+      completedUploads.push({
+        metadata: fullFileMetadata,
+        objectKey: storageMeta.objectKey
+      });
+
+      const downloadUrl = `/api/files/${fullFileMetadata.id}/download`;
+      const publicUrl = fullFileMetadata.visibility === 'public'
+        ? `/api/public/files/${fullFileMetadata.id}`
+        : undefined;
+
       uploadResults.push({
         id: fullFileMetadata.id,
-        url: storageMeta.publicUrl,
         filename: fullFileMetadata.originalFilename,
         mimetype: fullFileMetadata.detectedMimeType,
         size: fullFileMetadata.size,
-        objectKey: fullFileMetadata.objectKey,
-        visibility: fullFileMetadata.visibility
+        visibility: fullFileMetadata.visibility,
+        downloadUrl,
+        publicUrl
       });
 
       logActivity(
@@ -364,18 +457,19 @@ uploadRouter.post("/api/upload", requireAuth, memoryUpload.array("file", MAX_FIL
     }
 
     if (uploadResults.length === 1) {
-      return res.json({
+      return res.status(201).json({
         success: true,
         ...uploadResults[0]
       });
     }
 
-    res.json({
+    res.status(201).json({
       success: true,
       files: uploadResults
     });
   } catch (err: any) {
     console.error("Upload route error:", err);
+    await rollbackAllCompletedUploads();
     res.status(500).json({
       error: "UPLOAD_ERROR",
       message: "An error occurred while processing the file upload."
@@ -384,9 +478,10 @@ uploadRouter.post("/api/upload", requireAuth, memoryUpload.array("file", MAX_FIL
 });
 
 /**
- * Authenticated Private Document Download GET Route by object key (?key=...)
+ * Deprecated Authenticated Private Document Download GET Route by object key (?key=...)
  */
 uploadRouter.get("/api/files/download", requireAuth, async (req: any, res: any) => {
+  res.setHeader('Deprecation', 'true');
   try {
     const rawKey = req.query.key as string;
     if (!rawKey || typeof rawKey !== 'string') {
@@ -403,7 +498,25 @@ uploadRouter.get("/api/files/download", requireAuth, async (req: any, res: any) 
     }
 
     const objectKey = parseKey.data;
-    const metadata = await getFileMetadataByObjectKey(objectKey);
+    let metadata: FileMetadata | null = null;
+    try {
+      metadata = await getFileMetadataByObjectKeyAuthoritative(objectKey);
+    } catch (dbErr) {
+      if (dbErr instanceof MetadataUnavailableError) {
+        logAuditEvent({
+          actor: req.user.email || req.user.id,
+          action: 'METADATA_SERVICE_UNAVAILABLE',
+          category: 'Storage',
+          description: `Metadata service outage during download request for key ${objectKey}`,
+          metadata: { objectKey }
+        });
+        return res.status(503).json({
+          error: "STORAGE_METADATA_UNAVAILABLE",
+          message: "File access could not be verified due to metadata service outage."
+        });
+      }
+      throw dbErr;
+    }
 
     if (!metadata) {
       return res.status(404).json({ error: "NOT_FOUND", message: "Private document metadata not found." });
@@ -441,12 +554,30 @@ uploadRouter.get("/api/files/download", requireAuth, async (req: any, res: any) 
 });
 
 /**
- * Download file by Metadata ID route
+ * Authoritative Download file by Metadata ID route
  */
 uploadRouter.get("/api/files/:fileId/download", requireAuth, async (req: any, res: any) => {
   try {
     const fileId = req.params.fileId;
-    const metadata = await getFileMetadataById(fileId);
+    let metadata: FileMetadata | null = null;
+    try {
+      metadata = await getFileMetadataByIdAuthoritative(fileId);
+    } catch (dbErr) {
+      if (dbErr instanceof MetadataUnavailableError) {
+        logAuditEvent({
+          actor: req.user.email || req.user.id,
+          action: 'METADATA_SERVICE_UNAVAILABLE',
+          category: 'Storage',
+          description: `Metadata service outage during download request for ID ${fileId}`,
+          metadata: { fileId }
+        });
+        return res.status(503).json({
+          error: "STORAGE_METADATA_UNAVAILABLE",
+          message: "File access could not be verified due to metadata service outage."
+        });
+      }
+      throw dbErr;
+    }
 
     if (!metadata) {
       return res.status(404).json({ error: "NOT_FOUND", message: "Document metadata not found." });
@@ -489,7 +620,19 @@ uploadRouter.get("/api/files/:fileId/download", requireAuth, async (req: any, re
 uploadRouter.get("/api/public/files/:id", async (req: Request, res: Response) => {
   try {
     const fileId = req.params.id;
-    const metadata = await getFileMetadataById(fileId);
+    let metadata: FileMetadata | null = null;
+
+    try {
+      metadata = await getFileMetadataByIdAuthoritative(fileId);
+    } catch (dbErr) {
+      if (dbErr instanceof MetadataUnavailableError) {
+        return res.status(503).json({
+          error: "STORAGE_METADATA_UNAVAILABLE",
+          message: "Public file metadata service unavailable."
+        });
+      }
+      throw dbErr;
+    }
 
     if (!metadata || metadata.status !== 'active') {
       return res.status(404).json({ error: "NOT_FOUND", message: "Public file not found." });
@@ -510,7 +653,8 @@ uploadRouter.get("/api/public/files/:id", async (req: Request, res: Response) =>
     }
 
     res.setHeader('Content-Type', metadata.detectedMimeType);
-    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=3600');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
     res.sendFile(fullPath);
   } catch (err: any) {
     console.error("Public file route error:", err);

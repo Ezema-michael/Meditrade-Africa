@@ -347,6 +347,13 @@ export const DEFAULT_VISIBILITY: Record<AllowedEntityType, FileVisibility> = {
   inspection: 'participants'
 };
 
+export class MetadataUnavailableError extends Error {
+  constructor(message = 'File metadata service unavailable') {
+    super(message);
+    this.name = 'MetadataUnavailableError';
+  }
+}
+
 export interface FileMetadata {
   id: string;
   uploaderUserId: string;
@@ -363,73 +370,153 @@ export interface FileMetadata {
   status: 'active' | 'pending' | 'deleted' | 'quarantined';
 }
 
-/**
- * Save file metadata durably in memory and Firestore
- */
-export async function saveFileMetadata(metadata: FileMetadata): Promise<void> {
-  const existingIndex = collections.fileMetadata.findIndex(f => f.id === metadata.id || f.objectKey === metadata.objectKey);
-  if (existingIndex >= 0) {
-    collections.fileMetadata[existingIndex] = metadata;
+export function removeFileMetadataFromCache(metadataId: string, objectKey?: string): void {
+  collections.fileMetadata = collections.fileMetadata.filter(
+    item =>
+      item.id !== metadataId &&
+      (!objectKey || item.objectKey !== objectKey)
+  );
+}
+
+export function updateFileMetadataCache(metadata: FileMetadata): void {
+  const index = collections.fileMetadata.findIndex(
+    item => item.id === metadata.id || item.objectKey === metadata.objectKey
+  );
+  if (index >= 0) {
+    collections.fileMetadata[index] = metadata;
   } else {
     collections.fileMetadata.push(metadata);
   }
-
-  // Await Firestore persistence to ensure transactional durability
-  await saveToFirestore('file_metadata', metadata.id, metadata);
 }
 
 /**
- * Retrieve file metadata by object key from memory or Firestore
+ * Save file metadata durably in memory and Firestore (Firestore-first)
  */
-export async function getFileMetadataByObjectKey(objectKey: string): Promise<FileMetadata | null> {
-  const inMemory = collections.fileMetadata.find(f => f.objectKey === objectKey);
-  if (inMemory) return inMemory as FileMetadata;
-
+export async function saveFileMetadata(metadata: FileMetadata): Promise<void> {
+  const cleanMeta = sanitizeFirestoreData(metadata);
+  updateFileMetadataCache(cleanMeta);
   try {
-    const q = query(collection(db, 'file_metadata'), where('objectKey', '==', objectKey));
-    const snapshot = await getDocs(q);
-    if (!snapshot.empty) {
-      const data = snapshot.docs[0].data() as FileMetadata;
-      collections.fileMetadata.push(data);
-      return data;
-    }
+    await saveToFirestore('file_metadata', metadata.id, cleanMeta);
   } catch (err) {
-    console.error(`Error fetching file metadata for ${objectKey} from Firestore:`, err);
+    removeFileMetadataFromCache(metadata.id, metadata.objectKey);
+    console.error(`Failed to persist file metadata for ID ${metadata.id}:`, err);
+    throw err;
   }
-
-  return null;
 }
 
 /**
- * Retrieve file metadata by metadata ID
+ * Authoritative lookup for file metadata by ID directly from Firestore
  */
-export async function getFileMetadataById(id: string): Promise<FileMetadata | null> {
-  const inMemory = collections.fileMetadata.find(f => f.id === id);
-  if (inMemory) return inMemory as FileMetadata;
+export async function getFileMetadataByIdAuthoritative(id: string): Promise<FileMetadata | null> {
+  if (adminDb) {
+    try {
+      const docSnap = await adminDb.collection('file_metadata').doc(id).get();
+      if (!docSnap.exists) {
+        removeFileMetadataFromCache(id);
+        return null;
+      }
+      const data = docSnap.data() as FileMetadata;
+      updateFileMetadataCache(data);
+      return data;
+    } catch (adminErr: any) {
+      console.warn(`AdminDb lookup failed for ID ${id}:`, adminErr.message);
+    }
+  }
 
   try {
     const docRef = doc(db, 'file_metadata', id);
     const snap = await getDoc(docRef);
-    if (snap.exists()) {
-      const data = snap.data() as FileMetadata;
-      collections.fileMetadata.push(data);
-      return data;
+    if (!snap.exists()) {
+      removeFileMetadataFromCache(id);
+      return null;
     }
-  } catch (err) {
-    console.error(`Error fetching file metadata document ${id} from Firestore:`, err);
+    const data = snap.data() as FileMetadata;
+    updateFileMetadataCache(data);
+    return data;
+  } catch (err: any) {
+    const cached = collections.fileMetadata.find(f => f.id === id);
+    if (cached) {
+      return cached as FileMetadata;
+    }
+    const msg = String(err?.message || err).toLowerCase();
+    if (msg.includes('permission') || err.code === 'permission-denied') {
+      removeFileMetadataFromCache(id);
+      return null;
+    }
+    console.error(`Firestore error during authoritative file metadata lookup by ID (${id}):`, err);
+    throw new MetadataUnavailableError(`File metadata lookup failed for ID ${id}: ${err.message}`);
+  }
+}
+
+/**
+ * Authoritative lookup for file metadata by Object Key directly from Firestore
+ */
+export async function getFileMetadataByObjectKeyAuthoritative(objectKey: string): Promise<FileMetadata | null> {
+  if (adminDb) {
+    try {
+      const snap = await adminDb.collection('file_metadata').where('objectKey', '==', objectKey).get();
+      if (snap.empty) {
+        removeFileMetadataFromCache('', objectKey);
+        return null;
+      }
+      const data = snap.docs[0].data() as FileMetadata;
+      updateFileMetadataCache(data);
+      return data;
+    } catch (adminErr: any) {
+      console.warn(`AdminDb lookup failed for key ${objectKey}:`, adminErr.message);
+    }
   }
 
-  return null;
+  try {
+    const q = query(collection(db, 'file_metadata'), where('objectKey', '==', objectKey));
+    const snapshot = await getDocs(q);
+    if (snapshot.empty) {
+      removeFileMetadataFromCache('', objectKey);
+      return null;
+    }
+    const data = snapshot.docs[0].data() as FileMetadata;
+    updateFileMetadataCache(data);
+    return data;
+  } catch (err: any) {
+    const cached = collections.fileMetadata.find(f => f.objectKey === objectKey);
+    if (cached) {
+      return cached as FileMetadata;
+    }
+    const msg = String(err?.message || err).toLowerCase();
+    if (msg.includes('permission') || err.code === 'permission-denied') {
+      removeFileMetadataFromCache('', objectKey);
+      return null;
+    }
+    console.error(`Firestore error during authoritative file metadata lookup by Key (${objectKey}):`, err);
+    throw new MetadataUnavailableError(`File metadata lookup failed for object key ${objectKey}: ${err.message}`);
+  }
+}
+
+/**
+ * Retrieve file metadata by object key from memory or Firestore (non-authoritative fallback)
+ */
+export async function getFileMetadataByObjectKey(objectKey: string): Promise<FileMetadata | null> {
+  return getFileMetadataByObjectKeyAuthoritative(objectKey).catch(() => {
+    const inMemory = collections.fileMetadata.find(f => f.objectKey === objectKey);
+    return inMemory ? (inMemory as FileMetadata) : null;
+  });
+}
+
+/**
+ * Retrieve file metadata by metadata ID (non-authoritative fallback)
+ */
+export async function getFileMetadataById(id: string): Promise<FileMetadata | null> {
+  return getFileMetadataByIdAuthoritative(id).catch(() => {
+    const inMemory = collections.fileMetadata.find(f => f.id === id);
+    return inMemory ? (inMemory as FileMetadata) : null;
+  });
 }
 
 /**
  * Delete file metadata
  */
 export async function deleteFileMetadata(id: string): Promise<void> {
-  const index = collections.fileMetadata.findIndex(f => f.id === id);
-  if (index >= 0) {
-    collections.fileMetadata.splice(index, 1);
-  }
+  removeFileMetadataFromCache(id);
   await deleteFromFirestore('file_metadata', id);
 }
 
@@ -456,19 +543,24 @@ function sanitizeFirestoreData(data: any): any {
  */
 export async function saveToFirestore(collectionName: string, id: string, data: any) {
   const cleanData = sanitizeFirestoreData(data);
+  let lastErr: any = null;
   try {
     if (adminDb) {
       await adminDb.collection(collectionName).doc(id).set(cleanData, { merge: true });
       return;
     }
   } catch (adminErr) {
-    // Admin DB unconfigured or unauthorized in local test mode
+    lastErr = adminErr;
   }
 
   try {
     await setDoc(doc(db, collectionName, id), cleanData, { merge: true });
-  } catch (err) {
-    console.error(`Notice: Could not persist document ${id} to Firestore collection ${collectionName}:`, (err as Error).message);
+  } catch (err: any) {
+    console.error(`Notice: Could not persist document ${id} to Firestore collection ${collectionName}:`, err.message);
+    lastErr = err;
+    if ((collectionName === 'file_metadata' || process.env.NODE_ENV === 'production') && !err.message?.includes('PERMISSION_DENIED')) {
+      throw lastErr;
+    }
   }
 }
 

@@ -157,6 +157,7 @@ describe('Authorization & Identity Security Tests', () => {
       expect(res.body.message).toContain('do not own this equipment listing');
     });
 
+    let uploadedFileId = '';
     let uploadedFileKey = '';
 
     it('should allow file upload for an entity owned by the requesting user and persist metadata', async () => {
@@ -167,24 +168,26 @@ describe('Authorization & Identity Security Tests', () => {
         .field('entity_id', 'sel-1')
         .attach('file', Buffer.from('%PDF-1.4 test document'), 'spec.pdf');
 
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(201);
       expect(res.body.success).toBe(true);
-      expect(res.body.url).toContain('/api/files/download?key=');
+      expect(res.body.id).toBeDefined();
+      uploadedFileId = res.body.id;
       uploadedFileKey = res.body.objectKey;
     });
 
     it('should protect private file downloads from unauthenticated access', async () => {
+      const targetId = uploadedFileId || 'file-private-1';
       const res = await request(app)
-        .get(`/api/files/download?key=${encodeURIComponent(uploadedFileKey || 'uploads/test.pdf')}`);
+        .get(`/api/files/${targetId}/download`);
 
       expect(res.status).toBe(401);
       expect(res.body.error).toBe('UNAUTHORIZED');
     });
 
     it('should block unauthorized user (seller 2) from downloading private file uploaded for seller 1 listing', async () => {
-      if (!uploadedFileKey) return;
+      if (!uploadedFileId) return;
       const res = await request(app)
-        .get(`/api/files/download?key=${encodeURIComponent(uploadedFileKey)}`)
+        .get(`/api/files/${uploadedFileId}/download`)
         .set('Authorization', 'Bearer dev-seller2-token');
 
       expect(res.status).toBe(403);
@@ -192,9 +195,9 @@ describe('Authorization & Identity Security Tests', () => {
     });
 
     it('should allow authorized owner (seller 1) to download their private file', async () => {
-      if (!uploadedFileKey) return;
+      if (!uploadedFileId) return;
       const res = await request(app)
-        .get(`/api/files/download?key=${encodeURIComponent(uploadedFileKey)}`)
+        .get(`/api/files/${uploadedFileId}/download`)
         .set('Authorization', 'Bearer dev-seller1-token');
 
       expect(res.status).toBe(200);

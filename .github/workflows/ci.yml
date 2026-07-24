@@ -24,7 +24,10 @@ jobs:
         run: npm ci
 
       - name: Run Type Check & Linting
-        run: npm run lint
+        run: npm run typecheck
 
-      - name: Run Unit & Integration Tests
+      - name: Run Security & Integration Suite
         run: npm test
+
+      - name: Run Production Build
+        run: npm run build

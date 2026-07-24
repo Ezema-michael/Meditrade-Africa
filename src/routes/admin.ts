@@ -285,24 +285,6 @@ adminRouter.get("/api/admin/engagement-analytics", requireAuth, requireAdmin, (r
 adminRouter.get("/api/diagnostics/schema", requireAuth, requireAdmin, (req: any, res: any) => {
   logActivity(req.user.email || req.user.id, "DIAGNOSTICS_ACCESS", "AdminOps", "Accessed database diagnostics schema metrics");
 
-  const sanitizedUsers = collections.users.map(u => {
-    const seller = collections.sellers.find(s => s.user_id === u.id);
-    return {
-      id: u.id,
-      role: u.role,
-      status: u.status,
-      businessName: seller?.business_name || (u.role === 'admin' ? 'Platform Administrator' : 'Verified User')
-    };
-  });
-
-  const sanitizedSellers = collections.sellers.map(s => ({
-    id: s.id,
-    user_id: s.user_id,
-    business_name: s.business_name,
-    verification_status: s.verification_status,
-    state: s.state
-  }));
-
   res.json({
     metrics: {
       users_count: collections.users.length,
@@ -316,13 +298,9 @@ adminRouter.get("/api/diagnostics/schema", requireAuth, requireAdmin, (req: any,
       reports_count: collections.reports.length,
       audit_logs_count: activityLogsCollection.length,
       engineers_count: collections.engineers.length,
-      reviews_count: collections.engineerReviews.length
-    },
-    tables: {
-      users: sanitizedUsers,
-      sellers: sanitizedSellers,
-      categories: collections.categories,
-      listings: collections.listings.map(l => ({ id: l.id, title: l.title, status: l.status, price: l.price, state: l.state }))
+      reviews_count: collections.engineerReviews.length,
+      file_metadata_count: collections.fileMetadata.length,
+      quarantined_files_count: collections.fileMetadata.filter(f => f.status === 'quarantined').length
     }
   });
 });
