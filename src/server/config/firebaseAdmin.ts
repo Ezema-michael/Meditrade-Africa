@@ -42,6 +42,9 @@ function initializeFirebaseAdmin() {
       });
     } catch (e) {
       console.error("Failed to parse FIREBASE_SERVICE_ACCOUNT_JSON:", e);
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error("CRITICAL_CONFIGURATION_FATAL: FIREBASE_SERVICE_ACCOUNT_JSON is invalid");
+      }
     }
   }
 

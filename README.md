@@ -13,7 +13,9 @@
 
 ### 🔒 2. Escrow Payment & Milestone Protection
 * Milestone escrow engine protecting hospital procurement funds.
-* **Escrow Workflow**: Fund Deposit ➔ Biomedical Inspection & Sign-off ➔ Dispatch & Tracking ➔ Final Fund Release to Vendor.
+* **Bank Transfer Workflow**: Buyer transfers to the configured escrow collection account, uploads PDF/image proof, and waits for confirmation before dispatch.
+* **Payment Confirmation**: Proof can be confirmed only by a platform administrator, the deal's seller, or the specifically requested and assigned biomedical engineer.
+* **Escrow Workflow**: Agreement ➔ Payment Proof ➔ Authorized Confirmation ➔ Dispatch & Tracking ➔ Biomedical Inspection ➔ Final Fund Release.
 * Automated dispute resolution and admin escalation workflow.
 
 ### 🩺 3. Accredited Biomedical Engineering Network
@@ -50,6 +52,9 @@ The application has been hardened with enterprise-grade security controls:
 5. **Strict Ownership Authorization**: Route handlers enforce resource ownership for listings, seller profiles, offers, escrow deals, and financing applications.
 6. **Hardened File Upload Pipeline**: Includes magic byte MIME type detection, XSS filename sanitization, anti-malware scanning abstractions, and file size limits.
 7. **Production-Safe Development Admin**: Frontend development admin mode is explicitly restricted to development mode and requires `VITE_ENABLE_DEV_ADMIN="true"` in local environment.
+8. **Fail-Closed Production Startup**: Production requires Firestore, private GCS storage, ClamAV, explicit CORS origins, and configured bank-transfer details.
+9. **Audited Payment Proofs**: Uploading a receipt never marks funds as deposited; an authorized participant must confirm it through a state-restricted, logged action.
+10. **Operational Health Controls**: Liveness/readiness endpoints, configurable proxy/port settings, and graceful process shutdown support container deployments.
 
 ---
 
@@ -64,9 +69,10 @@ The application has been hardened with enterprise-grade security controls:
 * **Secure File Uploads**: Storage service pipeline with magic byte validation, anti-malware checks, and local/GCS storage adapters.
 * **Security Headers & Rate Limiting**: Helmet security headers and tiered rate limiting (global, API, critical actions).
 * **Automated Test Suite**: Vitest and Supertest integration suite verifying security, authentication, authorization, and validation rules (`npm test`).
+* **Manual Bank Transfer Proofs**: Participant-restricted receipt uploads and auditable confirmation by an administrator, matching seller, or explicitly assigned engineer.
 
 ### Prototype & Simulated Integrations
-* **Bank Escrow Disbursal**: Payment gateway collection and bank disbursal triggers are simulated via structured reference keys (`ESC-2026-*`) and milestone state updates.
+* **Automated Bank Settlement & Disbursal**: Manual transfer confirmation is available, but independent bank reconciliation, automated settlement, refunds, and vendor payout require a regulated provider integration.
 * **Lease Underwriting Desk**: Bank risk evaluation scorecards use deterministic financial models simulating bank underwriting decisions.
 * **GPS Fleet Tracking**: Inter-state waybill logistics calculations use distance matrix tables simulating real-time freight carrier quotes.
 
@@ -80,6 +86,7 @@ The application has been hardened with enterprise-grade security controls:
 * **Validation & Security**: Zod, `helmet`, `express-rate-limit`, structured JSON audit logging.
 * **AI Integration**: Google Gemini SDK (`@google/genai`).
 * **Testing**: Vitest, Supertest (`npm test`).
+* **Runtime & Deployment**: Node.js 22, multi-stage Docker image, health checks, graceful shutdown, and GitHub Actions CI.
 
 ---
 
@@ -126,6 +133,25 @@ The application has been hardened with enterprise-grade security controls:
 ```
 
 ---
+
+## Production deployment
+
+Production prerequisites, release gates, operational controls, and the explicit
+payment-provider limitation are documented in [PRODUCTION.md](./PRODUCTION.md).
+
+Before deployment:
+
+1. Configure every required value in `.env.example` through a secret manager.
+2. Provision the private GCS bucket, Firestore production database, and ClamAV.
+3. Replace the sample `BANK_TRANSFER_*` values with the reviewed collection account.
+4. Run `npm ci`, `npm run typecheck`, `npm test`, and `npm run build`.
+5. Deploy the included `Dockerfile` and configure `/health/live` and `/health/ready`.
+
+Current verified baseline: **78 automated tests passing**, clean TypeScript
+validation, and successful production client/server builds.
+
+Do not describe manual receipt confirmation as independent bank verification, or
+the financing and logistics estimates as binding financial or carrier offers.
 
 ## 📄 License
 

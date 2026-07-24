@@ -109,6 +109,16 @@ export const requireAuth = async (req: any, res: Response, next: NextFunction) =
         status: 'pending_registration'
       };
       return next();
+    } else if (token === 'dev-engineer-token') {
+      req.auth = { uid: 'f-uid-engineer-test', email: 'engineer@example.com' };
+      req.user = collections.users.find(u => u.id === 'usr-engineer-test') || {
+        id: 'usr-engineer-test',
+        firebase_uid: 'f-uid-engineer-test',
+        email: 'engineer@example.com',
+        role: 'engineer',
+        status: 'active'
+      };
+      return next();
     }
   }
 
@@ -190,7 +200,7 @@ export const errorHandler = (err: any, req: Request, res: Response, next: NextFu
   const status = err.status || err.statusCode || 500;
   res.status(status).json({
     error: err.code || 'SERVER_ERROR',
-    message: err.message || 'An unexpected server error occurred.',
+    message: status >= 500 ? 'An unexpected server error occurred.' : (err.message || 'Request failed.'),
     correlationId: (req as any).id
   });
 };

@@ -7,12 +7,17 @@ import { z } from "zod";
 
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
+  PORT: z.string().regex(/^\d+$/).optional(),
+  TRUST_PROXY: z.string().optional(),
   APP_URL: z.string().optional(),
   ALLOWED_ORIGINS: z.string().optional(),
   FIREBASE_PROJECT_ID: z.string().optional(),
   FIREBASE_SERVICE_ACCOUNT_JSON: z.string().optional(),
   STORAGE_PROVIDER: z.enum(["local", "gcs"]).default("local"),
   GCS_BUCKET_NAME: z.string().optional(),
+  BANK_TRANSFER_BANK_NAME: z.string().optional(),
+  BANK_TRANSFER_ACCOUNT_NAME: z.string().optional(),
+  BANK_TRANSFER_ACCOUNT_NUMBER: z.string().optional(),
   MALWARE_SCANNER: z.enum(["basic", "clamav"]).default("basic"),
   CLAMAV_HOST: z.string().optional(),
   CLAMAV_PORT: z.string().optional(),
@@ -96,9 +101,20 @@ export function validateEnv(): EnvConfig {
         "CRITICAL_SECURITY_FATAL: VITE_ENABLE_DEV_ADMIN cannot be set to 'true' in production environment!"
       );
     }
-    if (env.STORAGE_PROVIDER === "gcs" && !env.GCS_BUCKET_NAME) {
+    if (env.STORAGE_PROVIDER !== "gcs") {
+      throw new Error("CRITICAL_SECURITY_FATAL: STORAGE_PROVIDER must be 'gcs' in production!");
+    }
+    if (env.MALWARE_SCANNER !== "clamav") {
+      throw new Error("CRITICAL_SECURITY_FATAL: MALWARE_SCANNER must be 'clamav' in production!");
+    }
+    if (!env.GCS_BUCKET_NAME) {
       throw new Error(
         "CRITICAL_CONFIGURATION_FATAL: GCS_BUCKET_NAME is required when STORAGE_PROVIDER is set to 'gcs'!"
+      );
+    }
+    if (!env.BANK_TRANSFER_BANK_NAME || !env.BANK_TRANSFER_ACCOUNT_NAME || !env.BANK_TRANSFER_ACCOUNT_NUMBER) {
+      throw new Error(
+        "CRITICAL_CONFIGURATION_FATAL: BANK_TRANSFER_BANK_NAME, BANK_TRANSFER_ACCOUNT_NAME, and BANK_TRANSFER_ACCOUNT_NUMBER are required in production!"
       );
     }
   }

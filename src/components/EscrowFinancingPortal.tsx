@@ -9,7 +9,7 @@ import {
   Clock, AlertTriangle, FileText, ArrowRight, Lock, Sparkles, 
   UserCheck, RefreshCw, Layers, Check, ExternalLink, ChevronRight,
   TrendingUp, Award, HelpCircle, PhoneCall, Truck, ShieldAlert,
-  CreditCard, Landmark, BadgePercent, CheckCircle, Info
+  CreditCard, Landmark, BadgePercent, CheckCircle, Info, UploadCloud
 } from 'lucide-react';
 
 import { EscrowDeal, LeaseFinancingApplication, FinancingPartner, Listing } from '../types';
@@ -33,6 +33,8 @@ export default function EscrowFinancingPortal({ currentUser, onRefresh }: Escrow
   const [listings, setListings] = useState<Listing[]>([]);
   const [selectedListingId, setSelectedListingId] = useState('');
   const [escrowAmountInput, setEscrowAmountInput] = useState<number>(0);
+  const [engineers, setEngineers] = useState<Array<{ id: string; name: string; specialty: string }>>([]);
+  const [selectedEngineerId, setSelectedEngineerId] = useState('');
   const [isSubmittingEscrow, setIsSubmittingEscrow] = useState(false);
 
   // Financing State
@@ -60,6 +62,12 @@ export default function EscrowFinancingPortal({ currentUser, onRefresh }: Escrow
   const [dispatchTrackingNo, setDispatchTrackingNo] = useState('');
   const [disputeReason, setDisputeReason] = useState('');
   const [engineerInspectionNotes, setEngineerInspectionNotes] = useState('');
+  const [paymentProofUploading, setPaymentProofUploading] = useState<Record<string, boolean>>({});
+  const [bankTransferDetails, setBankTransferDetails] = useState<{
+    bank_name: string;
+    account_name: string;
+    account_number: string;
+  } | null>(null);
 
   // Fetch Escrow & Financing Data
   const fetchData = async () => {
@@ -135,16 +143,75 @@ export default function EscrowFinancingPortal({ currentUser, onRefresh }: Escrow
   const totalInterestPaid = totalRepayment - financedAmount;
 
   // Escrow Action Handlers
-  const handleDepositFunds = async (dealId: string) => {
+  const handleBankPaymentProof = async (deal: EscrowDeal, file: File) => {
+    const bankName = prompt('Bank used for this transfer:');
+    if (!bankName) return;
+    const transactionReference = prompt('Bank transaction/reference number:');
+    if (!transactionReference) return;
+
+    setPaymentProofUploading(current => ({ ...current, [deal.id]: true }));
     try {
-      const res = await fetch(`/api/escrow/${dealId}/deposit`, { method: 'PATCH' });
-      if (res.ok) {
-        alert('Payment locked into Escrow Custody Account! Vendor notified to dispatch.');
-        fetchData();
-        if (onRefresh) onRefresh();
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('entity_type', 'escrow');
+      formData.append('entity_id', deal.id);
+
+      const uploadRes = await fetch('/api/upload', { method: 'POST', body: formData });
+      const uploadData = await uploadRes.json();
+      if (!uploadRes.ok) {
+        throw new Error(uploadData.message || 'Payment proof upload failed.');
       }
-    } catch (err) {
-      console.error(err);
+
+      const bankRes = await fetch('/api/escrow/bank-details');
+      if (bankRes.ok) {
+        setBankTransferDetails(await bankRes.json());
+      }
+
+      const engineerRes = await fetch('/api/engineers');
+      if (engineerRes.ok) {
+        setEngineers(await engineerRes.json());
+      }
+
+      const submitRes = await fetch(`/api/escrow/${deal.id}/bank-payment-proof`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          proof_file_id: uploadData.id,
+          bank_name: bankName,
+          transaction_reference: transactionReference
+        })
+      });
+      const submitData = await submitRes.json();
+      if (!submitRes.ok) {
+        throw new Error(submitData.message || 'Payment proof could not be submitted.');
+      }
+
+      alert('Bank-transfer proof submitted. Funds remain unconfirmed until an authorized reviewer verifies the receipt.');
+      await fetchData();
+      if (onRefresh) onRefresh();
+    } catch (err: any) {
+      alert(err.message || 'Bank-payment proof submission failed.');
+    } finally {
+      setPaymentProofUploading(current => ({ ...current, [deal.id]: false }));
+    }
+  };
+
+  const handleConfirmBankPayment = async (dealId: string) => {
+    const notes = prompt('Optional confirmation notes (for the audit record):') || '';
+    try {
+      const res = await fetch(`/api/escrow/${dealId}/bank-payment-confirm`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notes })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Payment confirmation failed.');
+
+      alert('Bank payment confirmed. The seller may now dispatch the equipment.');
+      await fetchData();
+      if (onRefresh) onRefresh();
+    } catch (err: any) {
+      alert(err.message || 'Payment confirmation failed.');
     }
   };
 
@@ -234,12 +301,14 @@ export default function EscrowFinancingPortal({ currentUser, onRefresh }: Escrow
           buyer_id: currentUser?.id || 'usr-5',
           buyer_name: currentUser?.businessName || currentUser?.email || 'Hospital Purchaser',
           buyer_email: currentUser?.email || 'purchasing@hospital.ng',
-          amount: escrowAmountInput
+          amount: escrowAmountInput,
+          ...(selectedEngineerId ? { assigned_engineer_id: selectedEngineerId } : {})
         })
       });
       if (res.ok) {
-        alert('Escrow Agreement successfully initiated! Proceed to deposit funds into escrow custody.');
+        alert('Escrow agreement initiated. Transfer to the displayed bank account and upload payment proof.');
         setShowCreateEscrowModal(false);
+        setSelectedEngineerId('');
         fetchData();
         if (onRefresh) onRefresh();
       }
@@ -475,6 +544,24 @@ export default function EscrowFinancingPortal({ currentUser, onRefresh }: Escrow
           </div>
 
           {/* ESCROW DEALS LIST */}
+          {bankTransferDetails && (
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+              <div className="flex items-start gap-3">
+                <Landmark className="h-5 w-5 text-emerald-700 mt-0.5" />
+                <div>
+                  <h4 className="text-xs font-black text-emerald-900">Escrow bank-transfer account</h4>
+                  <p className="mt-1 text-sm font-black text-slate-900">
+                    {bankTransferDetails.bank_name} · {bankTransferDetails.account_number}
+                  </p>
+                  <p className="text-xs text-slate-700">{bankTransferDetails.account_name}</p>
+                  <p className="mt-1 text-[10px] text-emerald-800">
+                    Use the escrow reference shown on your deal. Uploading a receipt does not confirm payment.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="space-y-4">
             {escrowDeals.length === 0 ? (
               <div className="py-12 border border-dashed border-slate-200 rounded-2xl text-center bg-white">
@@ -575,7 +662,7 @@ export default function EscrowFinancingPortal({ currentUser, onRefresh }: Escrow
                         <span className="font-bold text-slate-700 block mb-1">Assigned Biomedical Engineer:</span>
                         <span className="text-slate-900 font-semibold flex items-center gap-1">
                           <UserCheck className="h-3.5 w-3.5 text-indigo-600" />
-                          {deal.assigned_engineer_name || 'Engr. Emeka Okafor (Biomedical Lead)'}
+                          {deal.assigned_engineer_name || 'No engineer requested'}
                         </span>
                         {deal.engineer_notes && (
                           <p className="text-[11px] text-slate-600 font-mono mt-1 bg-white p-2 rounded-lg border border-slate-200">
@@ -595,14 +682,62 @@ export default function EscrowFinancingPortal({ currentUser, onRefresh }: Escrow
                       </div>
                     </div>
 
+                    {deal.payment_method === 'bank_transfer' && (
+                      <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <span className="font-black text-amber-900">Bank transfer</span>
+                            <span className="ml-2 text-amber-800">
+                              {deal.bank_payment_status === 'confirmed' ? 'Confirmed' : 'Proof awaiting confirmation'}
+                            </span>
+                          </div>
+                          {deal.bank_payment_proof_file_id && (
+                            <a
+                              href={`/api/files/${deal.bank_payment_proof_file_id}/download`}
+                              className="font-bold text-indigo-700 hover:underline"
+                            >
+                              View payment proof
+                            </a>
+                          )}
+                        </div>
+                        <div className="mt-1 text-[11px] text-amber-800">
+                          Bank: {deal.bank_payment_bank_name} · Reference: {deal.bank_payment_transaction_reference}
+                        </div>
+                        {deal.bank_payment_confirmed_at && (
+                          <div className="mt-1 text-[10px] text-emerald-800">
+                            Confirmed {new Date(deal.bank_payment_confirmed_at).toLocaleString()} by {deal.bank_payment_confirmed_by_role}.
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     {/* Interactive Action Controls */}
                     <div className="flex items-center gap-2 flex-wrap pt-2 justify-end border-t border-slate-100">
-                      {isInitiated && (
+                      {isInitiated && deal.buyer_id === currentUser?.id && deal.bank_payment_status !== 'proof_pending' && (
+                        <label className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold cursor-pointer transition-all flex items-center gap-1">
+                          <UploadCloud className="h-3.5 w-3.5" />
+                          {paymentProofUploading[deal.id] ? 'Uploading proof…' : 'Pay by bank transfer & upload proof'}
+                          <input
+                            type="file"
+                            className="hidden"
+                            accept=".pdf,.jpg,.jpeg,.png,.webp"
+                            disabled={paymentProofUploading[deal.id]}
+                            onChange={event => {
+                              const file = event.target.files?.[0];
+                              if (file) handleBankPaymentProof(deal, file);
+                              event.target.value = '';
+                            }}
+                          />
+                        </label>
+                      )}
+
+                      {isInitiated && deal.bank_payment_status === 'proof_pending' &&
+                        ['admin', 'seller', 'engineer'].includes(currentUser?.role) && (
                         <button
-                          onClick={() => handleDepositFunds(deal.id)}
-                          className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold cursor-pointer transition-all flex items-center gap-1"
+                          onClick={() => handleConfirmBankPayment(deal.id)}
+                          className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold cursor-pointer transition-all flex items-center gap-1"
                         >
-                          <Lock className="h-3.5 w-3.5" /> Deposit Funds to Escrow Vault
+                          <CheckCircle className="h-3.5 w-3.5" /> Confirm bank payment
                         </button>
                       )}
 
@@ -1105,8 +1240,31 @@ export default function EscrowFinancingPortal({ currentUser, onRefresh }: Escrow
                 />
               </div>
 
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">
+                  Biomedical engineer confirmation (optional)
+                </label>
+                <select
+                  value={selectedEngineerId}
+                  onChange={event => setSelectedEngineerId(event.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-semibold"
+                >
+                  <option value="">No engineer requested</option>
+                  {engineers.map(engineer => (
+                    <option key={engineer.id} value={engineer.id}>
+                      {engineer.name} — {engineer.specialty}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div className="p-3 bg-indigo-50 border border-indigo-100 rounded-xl text-[11px] text-indigo-900 space-y-1">
-                <p>🔒 <strong>Escrow Guarantee:</strong> Payment remains locked in custodian account until a certified biomedical engineer tests the equipment and completes physical inspection sign-off.</p>
+                <p>
+                  🔒 <strong>Escrow Guarantee:</strong> Payment proof must be confirmed before dispatch.
+                  {selectedEngineerId
+                    ? ' The requested engineer may confirm payment and must complete inspection sign-off.'
+                    : ' An administrator handles inspection approval when no engineer is requested.'}
+                </p>
               </div>
 
               <div className="flex justify-end gap-2 pt-3 border-t">

@@ -5,6 +5,7 @@
 
 import { Router } from "express";
 import { logActivity } from "../lib/auditLogger";
+import { requireAuth, criticalLimiter, sanitizeText } from "../server/middleware";
 
 export const logisticsRouter = Router();
 
@@ -187,7 +188,7 @@ function calculateLogisticsBreakdown(params: {
   };
 }
 
-logisticsRouter.post("/api/logistics/estimate", (req, res) => {
+logisticsRouter.post("/api/logistics/estimate", criticalLimiter, (req, res) => {
   const {
     origin_state,
     destination_state,
@@ -217,7 +218,7 @@ logisticsRouter.post("/api/logistics/estimate", (req, res) => {
   res.json(breakdown);
 });
 
-logisticsRouter.post("/api/logistics/quote", (req, res) => {
+logisticsRouter.post("/api/logistics/quote", requireAuth, criticalLimiter, (req: any, res) => {
   const {
     listing_id,
     listing_title,
@@ -231,7 +232,6 @@ logisticsRouter.post("/api/logistics/quote", (req, res) => {
     require_transit_insurance,
     require_escort_vehicle,
     require_biomed_specialist,
-    buyer_id,
     buyer_name,
     hospital_name
   } = req.body;
@@ -259,9 +259,9 @@ logisticsRouter.post("/api/logistics/quote", (req, res) => {
     destination_city: destination_city || 'Central District',
     equipment_category: equipment_category || 'standard_clinical',
     equipment_value_ngn: Number(equipment_value_ngn) || 5000000,
-    buyer_id: buyer_id || 'usr-5',
-    buyer_name: buyer_name || 'Hospital Purchaser',
-    hospital_name: hospital_name || buyer_name || 'Medical Facility',
+    buyer_id: req.user.id,
+    buyer_name: sanitizeText(buyer_name) || req.user.businessName || 'Hospital Purchaser',
+    hospital_name: sanitizeText(hospital_name) || req.user.businessName || 'Medical Facility',
     ...breakdown,
     status: 'saved',
     created_at: new Date().toISOString(),
@@ -275,6 +275,9 @@ logisticsRouter.post("/api/logistics/quote", (req, res) => {
   res.status(201).json(newQuote);
 });
 
-logisticsRouter.get("/api/logistics/quotes", (req, res) => {
-  res.json(logisticsQuotesCollection);
+logisticsRouter.get("/api/logistics/quotes", requireAuth, (req: any, res) => {
+  const quotes = req.user.role === 'admin'
+    ? logisticsQuotesCollection
+    : logisticsQuotesCollection.filter(quote => quote.buyer_id === req.user.id);
+  res.json(quotes);
 });

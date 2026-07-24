@@ -298,6 +298,17 @@ export interface EscrowDeal {
   engineer_notes?: string;
   engineer_approved?: boolean;
   payment_reference?: string;
+  payment_method?: 'bank_transfer' | 'payment_provider';
+  bank_payment_status?: 'proof_pending' | 'confirmed' | 'rejected';
+  bank_payment_proof_file_id?: string;
+  bank_payment_bank_name?: string;
+  bank_payment_transaction_reference?: string;
+  bank_payment_submitted_at?: string;
+  bank_payment_confirmed_at?: string;
+  bank_payment_confirmed_by?: string;
+  bank_payment_confirmed_by_role?: string;
+  bank_payment_confirmation_notes?: string;
+  engineer_requested?: boolean;
   delivery_tracking_no?: string;
   created_at: string;
   updated_at: string;
