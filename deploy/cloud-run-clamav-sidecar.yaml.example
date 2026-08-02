@@ -3,18 +3,19 @@ kind: Service
 metadata:
   name: meditrade-africa
   labels:
-    cloud.googleapis.com/location: us-central1
+    cloud.googleapis.com/location: europe-west2
 spec:
   template:
     metadata:
       annotations:
         run.googleapis.com/container-dependencies: '{"app":["clamav"]}'
     spec:
+      serviceAccountName: meditrade-cloud-run@meditradeafrica.iam.gserviceaccount.com
       containerConcurrency: 40
       timeoutSeconds: 300
       containers:
         - name: app
-          image: REGION-docker.pkg.dev/PROJECT_ID/REPOSITORY/meditrade-africa:TAG
+          image: europe-west2-docker.pkg.dev/meditradeafrica/meditrade/meditrade-africa:TAG
           ports:
             - containerPort: 3000
           env:
@@ -33,7 +34,9 @@ spec:
             - name: STORAGE_PROVIDER
               value: gcs
             - name: GCS_BUCKET_NAME
-              value: REPLACE_WITH_PRIVATE_BUCKET
+              value: meditradeafrica-private-uploads
+            - name: FIREBASE_PROJECT_ID
+              value: meditradeafrica
           resources:
             limits:
               cpu: "1"

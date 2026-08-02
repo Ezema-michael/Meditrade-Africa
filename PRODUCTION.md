@@ -46,6 +46,14 @@ can connect to `127.0.0.1:3310`. The example template is
 bucket, and secret-backed environment values before deploying with
 `gcloud run services replace`.
 
+The prepared Google Cloud runtime resources use:
+
+- Project: `meditradeafrica`
+- Region: `europe-west2`
+- Artifact Registry: `europe-west2-docker.pkg.dev/meditradeafrica/meditrade`
+- Runtime service account: `meditrade-cloud-run@meditradeafrica.iam.gserviceaccount.com`
+- Private upload bucket: `gs://meditradeafrica-private-uploads`
+
 ClamAV should remain one control in the upload pipeline, not the entire document
 security posture. Keep uploaded documents in private GCS storage, block access
 when scan metadata is missing or failed, and add separate sensitive-data

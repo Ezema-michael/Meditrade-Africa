@@ -1,12 +1,12 @@
 {
-  "projectId": "gen-lang-client-0152293419",
-  "appId": "1:25787017506:web:02e0c613a967d7b3e45d7b",
-  "apiKey": "AIzaSyC2300AXJkXKjlIKDV0wl5ayJOMJYE69IQ",
-  "authDomain": "gen-lang-client-0152293419.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-meditradeafrica-23444a66-4e42-4b7a-99c2-c344e082dacf",
-  "storageBucket": "gen-lang-client-0152293419.firebasestorage.app",
-  "messagingSenderId": "25787017506",
-  "measurementId": "",
-  "oAuthClientId": "25787017506-ln81dou7lni05p9sliaj5e5i8al6hc2k.apps.googleusercontent.com",
+  "projectId": "meditradeafrica",
+  "appId": "1:615137509854:web:d11fc8ae06bbb95f8fdd4f",
+  "apiKey": "AIzaSyCPU7eGBZeKnSVRcbloAda3rOmtBHCkgBs",
+  "authDomain": "meditradeafrica.firebaseapp.com",
+  "firestoreDatabaseId": "(default)",
+  "storageBucket": "meditradeafrica.firebasestorage.app",
+  "messagingSenderId": "615137509854",
+  "measurementId": "G-RM219PQR67",
+  "oAuthClientId": "",
   "recaptchaSiteKey": ""
 }
