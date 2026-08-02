@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import "dotenv/config";
 import express from "express";
 import helmet from "helmet";
 import cors from "cors";
@@ -30,6 +31,7 @@ import { adminRouter } from "./src/routes/admin";
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
+const serveStatic = process.env.NODE_ENV === "production" || process.env.SERVE_STATIC === "true";
 let isReady = false;
 
 if (process.env.TRUST_PROXY) {
@@ -116,7 +118,7 @@ async function startServer() {
   await initializeFirestore();
   isReady = true;
 
-  if (process.env.NODE_ENV !== "production") {
+  if (!serveStatic) {
     const vite = await createViteServer({
       server: { middlewareMode: true, hmr: false },
       appType: "spa",

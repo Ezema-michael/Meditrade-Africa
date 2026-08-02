@@ -21,6 +21,7 @@ const envSchema = z.object({
   MALWARE_SCANNER: z.enum(["basic", "clamav"]).default("basic"),
   CLAMAV_HOST: z.string().optional(),
   CLAMAV_PORT: z.string().optional(),
+  CLAMAV_TIMEOUT_MS: z.string().regex(/^\d+$/).optional(),
   ENABLE_DEV_AUTH_BYPASS: z.string().optional(),
   ENABLE_DEV_DIAGNOSTICS: z.string().optional(),
   VITE_ENABLE_DEV_ADMIN: z.string().optional()

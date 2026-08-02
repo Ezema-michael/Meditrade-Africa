@@ -1,0 +1,52 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: meditrade-africa
+  labels:
+    cloud.googleapis.com/location: us-central1
+spec:
+  template:
+    metadata:
+      annotations:
+        run.googleapis.com/container-dependencies: '{"app":["clamav"]}'
+    spec:
+      containerConcurrency: 40
+      timeoutSeconds: 300
+      containers:
+        - name: app
+          image: REGION-docker.pkg.dev/PROJECT_ID/REPOSITORY/meditrade-africa:TAG
+          ports:
+            - containerPort: 3000
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: PORT
+              value: "3000"
+            - name: CLAMAV_HOST
+              value: "127.0.0.1"
+            - name: CLAMAV_PORT
+              value: "3310"
+            - name: CLAMAV_TIMEOUT_MS
+              value: "10000"
+            - name: MALWARE_SCANNER
+              value: clamav
+            - name: STORAGE_PROVIDER
+              value: gcs
+            - name: GCS_BUCKET_NAME
+              value: REPLACE_WITH_PRIVATE_BUCKET
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+        - name: clamav
+          image: clamav/clamav:stable
+          startupProbe:
+            tcpSocket:
+              port: 3310
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 18
+          resources:
+            limits:
+              cpu: "1"
+              memory: 2Gi

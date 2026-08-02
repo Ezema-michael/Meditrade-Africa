@@ -24,6 +24,33 @@ account before dispatch and never treat uploaded proof alone as receipt of funds
 - A reachable ClamAV service. Uploads fail closed when scanning is unavailable.
 - A load balancer that terminates TLS and supplies the expected proxy headers.
 
+## Malware scanning
+
+The upload route uses the `MALWARE_SCANNER` provider. Production must set:
+
+- `MALWARE_SCANNER=clamav`
+- `CLAMAV_HOST` to the scanner host reachable from the app container
+- `CLAMAV_PORT=3310`
+- `CLAMAV_TIMEOUT_MS=10000` or another reviewed timeout
+
+For local verification, start the included Docker Compose scanner:
+
+```sh
+npm run clamav:up
+npm run clamav:test
+```
+
+For Cloud Run, prefer a sidecar scanner in the same service revision so the app
+can connect to `127.0.0.1:3310`. The example template is
+`deploy/cloud-run-clamav-sidecar.yaml.example`. Replace the image, project,
+bucket, and secret-backed environment values before deploying with
+`gcloud run services replace`.
+
+ClamAV should remain one control in the upload pipeline, not the entire document
+security posture. Keep uploaded documents in private GCS storage, block access
+when scan metadata is missing or failed, and add separate sensitive-data
+classification for identity, banking, and medical documents.
+
 Copy `.env.example` into the deployment secret manager and replace every sample
 value. Never commit the resulting environment file. Production startup rejects
 local file storage, basic malware scanning, wildcard CORS, development bypasses,

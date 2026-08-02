@@ -11,6 +11,9 @@ describe('Production Environment Validation Tests', () => {
 
   beforeEach(() => {
     process.env = { ...origEnv };
+    delete process.env.ENABLE_DEV_AUTH_BYPASS;
+    delete process.env.ENABLE_DEV_DIAGNOSTICS;
+    delete process.env.VITE_ENABLE_DEV_ADMIN;
   });
 
   it('should pass in development mode with defaults', () => {
