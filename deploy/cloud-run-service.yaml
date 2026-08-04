@@ -1,0 +1,71 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: meditrade-africa
+  labels:
+    cloud.googleapis.com/location: europe-west2
+spec:
+  template:
+    metadata:
+      annotations:
+        run.googleapis.com/container-dependencies: '{"app":["clamav"]}'
+    spec:
+      serviceAccountName: meditrade-cloud-run@meditradeafrica.iam.gserviceaccount.com
+      containerConcurrency: 40
+      timeoutSeconds: 300
+      containers:
+        - name: app
+          image: europe-west2-docker.pkg.dev/meditradeafrica/meditrade/meditrade-africa:deploy-20260804095450
+          ports:
+            - containerPort: 3000
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: TRUST_PROXY
+              value: "true"
+            - name: APP_URL
+              value: https://meditrade-africa-k546pt7yfa-nw.a.run.app
+            - name: ALLOWED_ORIGINS
+              value: https://meditrade-africa-k546pt7yfa-nw.a.run.app,https://meditrade-africa-615137509854.europe-west2.run.app
+            - name: FIREBASE_PROJECT_ID
+              value: meditradeafrica
+            - name: STORAGE_PROVIDER
+              value: gcs
+            - name: GCS_BUCKET_NAME
+              value: meditradeafrica-private-uploads
+            - name: MALWARE_SCANNER
+              value: clamav
+            - name: CLAMAV_HOST
+              value: "127.0.0.1"
+            - name: CLAMAV_PORT
+              value: "3310"
+            - name: CLAMAV_TIMEOUT_MS
+              value: "10000"
+            - name: ENABLE_DEV_AUTH_BYPASS
+              value: "false"
+            - name: ENABLE_DEV_DIAGNOSTICS
+              value: "false"
+            - name: VITE_ENABLE_DEV_ADMIN
+              value: "false"
+            - name: BANK_TRANSFER_BANK_NAME
+              value: "Pending production bank configuration"
+            - name: BANK_TRANSFER_ACCOUNT_NAME
+              value: "MediTrade Africa escrow pending configuration"
+            - name: BANK_TRANSFER_ACCOUNT_NUMBER
+              value: "PENDING"
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+        - name: clamav
+          image: clamav/clamav:stable
+          startupProbe:
+            tcpSocket:
+              port: 3310
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 18
+          resources:
+            limits:
+              cpu: "1"
+              memory: 2Gi

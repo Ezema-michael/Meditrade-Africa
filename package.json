@@ -13,6 +13,7 @@
     "clamav:up": "docker compose -f docker-compose.clamav.yml up -d clamav",
     "clamav:down": "docker compose -f docker-compose.clamav.yml down",
     "clamav:test": "node scripts/clamav-smoke-test.mjs",
+    "migrate:firestore": "tsx scripts/migrate-firestore.ts",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit",

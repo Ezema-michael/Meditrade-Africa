@@ -72,6 +72,10 @@ if (fs.existsSync(configPath)) {
   }
 }
 
+if (!firebaseConfig.projectId && process.env.FIREBASE_PROJECT_ID) {
+  firebaseConfig.projectId = process.env.FIREBASE_PROJECT_ID;
+}
+
 const firebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 export const db = getFirestore(firebaseApp, databaseId);
 
@@ -190,6 +194,25 @@ export const collections = {
 export async function initializeFirestore() {
   console.log('🔄 Initializing Firestore Marketplace Persistence...');
   try {
+    if (adminDb) {
+      const snapshot = await adminDb.collection('listings').get();
+
+      if (snapshot.empty) {
+        if (process.env.NODE_ENV === 'production') {
+          throw new Error('CRITICAL_DATABASE_EMPTY: run the reviewed production data migration before startup');
+        }
+        console.log('Firestore is empty. Seeding initial marketplace data into Firestore...');
+        await seedWithAdminFirestore();
+        console.log('Firestore successfully seeded with initial marketplace records!');
+        return;
+      }
+
+      console.log('Loading existing marketplace collections from Firestore with Admin SDK...');
+      await loadWithAdminFirestore();
+      console.log(`Loaded ${collections.listings.length} listings, ${collections.sellers.length} vendors, ${collections.procurementRequests.length} RFQs, ${collections.fileMetadata.length} file metadata records from Firestore!`);
+      return;
+    }
+
     // Check if listings collection exists in Firestore
     const listingsRef = collection(db, 'listings');
     const snapshot = await getDocs(listingsRef);
@@ -318,6 +341,65 @@ export async function initializeFirestore() {
       throw new Error('CRITICAL_DATABASE_UNAVAILABLE: Firestore initialization failed');
     }
   }
+}
+
+async function seedWithAdminFirestore() {
+  const seedCollections: Array<[string, any[]]> = [
+    ['listings', collections.listings],
+    ['sellers', collections.sellers],
+    ['procurement_requests', collections.procurementRequests],
+    ['procurement_quotes', collections.procurementResponses],
+    ['engineers', collections.engineers],
+    ['escrow_deals', collections.escrowDeals],
+    ['offers', collections.offers],
+    ['inspections', collections.inspections]
+  ];
+
+  for (const [collectionName, items] of seedCollections) {
+    for (const item of items) {
+      await adminDb.collection(collectionName).doc(item.id).set(sanitizeFirestoreData(item), { merge: true });
+    }
+  }
+}
+
+async function loadAdminCollection<T>(collectionName: string): Promise<T[]> {
+  const snapshot = await adminDb.collection(collectionName).get();
+  return snapshot.empty ? [] : snapshot.docs.map(document => document.data() as T);
+}
+
+async function loadWithAdminFirestore() {
+  const listings = await loadAdminCollection<Listing>('listings');
+  if (listings.length > 0) collections.listings = listings;
+
+  const sellers = await loadAdminCollection<Seller>('sellers');
+  if (sellers.length > 0) collections.sellers = sellers;
+
+  const rfqs = await loadAdminCollection<ProcurementRequest>('procurement_requests');
+  if (rfqs.length > 0) collections.procurementRequests = rfqs;
+
+  const quotes = await loadAdminCollection<ProcurementResponse>('procurement_quotes');
+  if (quotes.length > 0) collections.procurementResponses = quotes;
+
+  const engineers = await loadAdminCollection<Engineer>('engineers');
+  if (engineers.length > 0) collections.engineers = engineers;
+
+  const escrowDeals = await loadAdminCollection<EscrowDeal>('escrow_deals');
+  if (escrowDeals.length > 0) collections.escrowDeals = escrowDeals;
+
+  const offers = await loadAdminCollection<Offer>('offers');
+  if (offers.length > 0) collections.offers = offers;
+
+  const inspections = await loadAdminCollection<any>('inspections');
+  if (inspections.length > 0) collections.inspections = inspections;
+
+  const leads = await loadAdminCollection<Lead>('leads');
+  if (leads.length > 0) collections.leads = leads;
+
+  const fileMetadata = await loadAdminCollection<any>('file_metadata');
+  if (fileMetadata.length > 0) collections.fileMetadata = fileMetadata;
+
+  const notifications = await loadAdminCollection<any>('notifications');
+  if (notifications.length > 0) collections.notifications = notifications;
 }
 
 export type AllowedEntityType =

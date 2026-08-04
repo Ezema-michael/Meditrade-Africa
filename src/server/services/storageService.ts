@@ -62,7 +62,7 @@ export class StorageService {
     this.provider = process.env.STORAGE_PROVIDER || 'local';
     this.bucketName = process.env.GCS_BUCKET_NAME;
     this.uploadsDir = path.join(process.cwd(), 'uploads');
-    if (!fs.existsSync(this.uploadsDir)) {
+    if (this.provider !== 'gcs' && !fs.existsSync(this.uploadsDir)) {
       fs.mkdirSync(this.uploadsDir, { recursive: true });
     }
   }
