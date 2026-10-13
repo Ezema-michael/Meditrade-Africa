@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: meditrade
+      POSTGRES_USER: meditrade
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in local .env}
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - meditrade_local_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U meditrade -d meditrade"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+volumes:
+  meditrade_local_data:
